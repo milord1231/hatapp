@@ -49,20 +49,7 @@ const KpdHistory = () => {
       description: "Несвоевременная уборка комнаты"
     }
   ];
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  useEffect(() => {
-    const userId = Cookies.get('user_id');
-    if (userId) {
-      setIsAuthenticated(true);
-    }
-  }, []);
-  
 
-  toast.info("Login status: " + isAuthenticated);
-  // Redirect to login if not authenticated
-  if (!isAuthenticated) {
-    return <Navigate to="/login" />;
-  }
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8">

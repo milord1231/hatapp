@@ -10,6 +10,7 @@ import NotFound from "./pages/NotFound";
 import HomePage from "./pages/HomePage";
 import Login from "@/pages/Login";
 import axios from 'axios';
+import PrivateRoute from '@/components/PrivateRoute';
 
 // Убедитесь, что cookies отправляются при запросах
 axios.defaults.withCredentials = true;
@@ -24,10 +25,11 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<HomePage />} />
-            <Route path="/profile" element={<Index />} />
-            <Route path="/kpd-history" element={<KpdHistory />} />
+              <PrivateRoute>
+                <Route path="/profile" element={<Index />} />
+                <Route path="/kpd-history" element={<KpdHistory />} />
+              </PrivateRoute>
             <Route path="/login" element={<Login />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

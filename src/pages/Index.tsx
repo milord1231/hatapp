@@ -11,22 +11,6 @@ import { Home } from "lucide-react";
 
 
 const Index: React.FC = () => {
-  // Mock data for the profile
-
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  useEffect(() => {
-    const userId = Cookies.get('user_id');
-    if (userId) {
-      setIsAuthenticated(true);
-    }
-  }, []);
-  
-
-  toast.info("Login status: " + isAuthenticated);
-  // Redirect to login if not authenticated
-  if (!isAuthenticated) {
-    return <Navigate to="/login" />;
-  }
 
   const [user, setUser] = useState<UserData>({
     fullName: '',
