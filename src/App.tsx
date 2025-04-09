@@ -23,15 +23,18 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+        
+
           <Routes>
-            <Route path="/" element={<HomePage />} />
-              <PrivateRoute>
-                <Route path="/profile" element={<Index />} />
-                <Route path="/kpd-history" element={<KpdHistory />} />
-              </PrivateRoute>
+            <Route path="/" element={ <PrivateRoute><HomePage /></PrivateRoute>} />
+            
+                <Route path="/profile" element={<PrivateRoute><Index /></PrivateRoute>} />
+                <Route path="/kpd-history" element={<PrivateRoute><KpdHistory /></PrivateRoute>} />
+              
             <Route path="/login" element={<Login />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+        
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>
