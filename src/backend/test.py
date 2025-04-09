@@ -1,6 +1,6 @@
 import requests
 
-url = "http://localhost:5000/api/kpd"  # Замени на реальный адрес, если не локально
+url = "http://127.0.0.1:5000/api/kpd"  # Замени на реальный адрес, если не локально
 
 payload = {
   "user_id": 3,
