@@ -31,14 +31,21 @@ limiter = Limiter(app)
 #     if origin and origin not in ALLOWED_ORIGINS:
 #         return jsonify({"error": "Unauthorized origin"}), 403
 
-@app.before_request
-def check_ip():
-    # Получаем IP-адрес клиента
-    client_ip = request.remote_addr
+# @app.before_request
+# def check_ip():
+#     # Получаем IP-адрес клиента
+#     client_ip = request.remote_addr
+#     print("CLIENT IP: ", client_ip)
+#     if client_ip not in ALLOWED_IPS:
+#         return jsonify({'error': 'Forbidden access from this IP'}), 403  # 403 Forbidden
 
+@app.before_request
+def get_client_ip():
+    # Получаем реальный IP клиента через заголовок X-Forwarded-For
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    print(f"Client IP: {client_ip}")
     if client_ip not in ALLOWED_IPS:
         return jsonify({'error': 'Forbidden access from this IP'}), 403  # 403 Forbidden
-
 
 # Модели
 class User(db.Model):
