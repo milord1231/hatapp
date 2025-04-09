@@ -5,9 +5,12 @@ import datetime
 import time
 import requests
 from bs4 import BeautifulSoup
+from flask_limiter import Limiter
 
 app = Flask(__name__)
-CORS(app,  supports_credentials=True) 
+CORS(app, origins=["http://localhost:8080", "http://m170rd.ru"], supports_credentials=True)
+
+ALLOWED_ORIGINS = ['http://localhost:8080', 'http://m170rd.ru']
 
 app.config['SECRET_KEY'] = 'oh_so_secret'
 app.config['SESSION_COOKIE_HTTPONLY'] = True  # Это сделает cookie доступной только серверу (для безопасности)
@@ -15,6 +18,21 @@ app.config['SESSION_COOKIE_SECURE'] = True  # Убедитесь, что cookie 
 app.config['SESSION_PERMANENT'] = True  # Сделать сессии постоянными
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'  # Укажи путь к базе данных
 db = SQLAlchemy(app)
+limiter = Limiter(app)
+
+
+
+@app.before_request
+def check_authentication():
+    if request.method == 'OPTIONS':
+        return
+
+    origin = request.headers.get("Origin")
+    auth_cookie = request.cookies.get('auth_token')
+
+    if origin not in ['http://localhost:8080', 'http://m170rd.ru'] and not auth_cookie:
+        return jsonify({"error": "Unauthorized access"}), 403
+
 
 # Модели
 class User(db.Model):
@@ -28,6 +46,8 @@ class User(db.Model):
     contractNumber = db.Column(db.BigInteger)
     roles = db.Column(db.String)  # Список ролей
     FIO = db.Column(db.String)
+    admin_right = db.Column(db.Integer, default=0)
+    profile_image = db.Column(db.String)
 
 class CPDHistory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -35,6 +55,7 @@ class CPDHistory(db.Model):
     date = db.Column(db.Date)
     count = db.Column(db.Integer)
     reason = db.Column(db.String)
+    who_id = db.Column(db.Integer)
 
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -66,6 +87,8 @@ def register_user(
     lName: str,
     mName: str,
     roles: str,
+    admin_right: int,
+    profile_image: str,
     
 ) -> dict:
     # Проверка на существование пользователя с таким логином
@@ -83,7 +106,9 @@ def register_user(
         room=room,
         contractNumber=contractNumber,
         roles=roles or 'Проживающий',
-        FIO=f"{lName} {fName} {mName}"
+        FIO=f"{lName} {fName} {mName}",
+        admin_right=0,
+        profile_image=profile_image,
     )
 
     # Сохраняем в БД
@@ -110,7 +135,9 @@ def get_user_info_by_login(login: str) -> dict:
             'room': user.room,
             'contractNumber': user.contractNumber,
             'roles': user.roles,
-            'password': user.password
+            'password': user.password,
+            'admin_right': user.admin_right,
+            'profile_image': user.profile_image,
         }
     }
 
@@ -130,7 +157,9 @@ def get_user_info_by_id(user_id: int) -> dict:
             'block': user.block,
             'room': user.room,
             'contractNumber': user.contractNumber,
-            'roles': user.roles
+            'roles': user.roles,
+            'admin_right': user.admin_right,
+            'profile_image': user.profile_image,
         }
     }
 
@@ -149,9 +178,15 @@ def get_cpd_history_and_balance_by_user_id(user_id: int) -> dict:
     # Формируем историю в читаемый формат
     history_list = [
         {
-            'date': entry.date.strftime('%Y-%m-%d'),
             'count': entry.count,
-            'reason': entry.reason
+            'reason': entry.reason,
+            "id": entry.id,
+            "user_id": entry.user_id,
+            "date": entry.date.strftime('%Y-%m-%d'),
+            "count": entry.count,
+            "reason": entry.reason,
+            "who_id": entry.who_id,
+
         }
         for entry in history
     ]
@@ -198,9 +233,15 @@ def get_cpd_history_and_balance_by_login(login: str) -> dict:
     # Формируем историю в читаемый формат
     history_list = [
         {
-            'date': entry.date.strftime('%Y-%m-%d'),
             'count': entry.count,
-            'reason': entry.reason
+            'reason': entry.reason,
+            "id": entry.id,
+            "user_id": entry.user_id,
+            "date": entry.date.strftime('%Y-%m-%d'),
+            "count": entry.count,
+            "reason": entry.reason,
+            "who_id": entry.who_id,
+
         }
         for entry in history
     ]
@@ -291,7 +332,7 @@ def login_to_kai(username: str, password: str) -> bool:
         else:
             resp = register_user(username, password, 8, 0, 0, 0, 0, first_name, last_name, middle_name, "Проживающий")
             user_id = resp["user_id"]
-
+        update_user(user_id, {'password': password, 'profile_image': profileImg})
         return user_id, username, password, profileImg
 
 
@@ -327,57 +368,65 @@ def add_user(data):
     )
     db.session.add(new_user)
     db.session.commit()
-    return jsonify({"message": "User created successfully", "user_id": new_user.id}), 201
+    return 
 
 def update_user(user_id, data):
     user = User.query.get(user_id)
     if not user:
-        return jsonify({"message": "User not found"}), 404
+        return 
 
-    user.login = data.get('login', user.login)
-    user.password = data.get('password', user.password)
-    user.dormNumber = data.get('dormNumber', user.dormNumber)
-    user.floor = data.get('floor', user.floor)
-    user.block = data.get('block', user.block)
-    user.room = data.get('room', user.room)
-    user.contractNumber = data.get('contractNumber', user.contractNumber)
-    user.roles = data.get('roles', user.roles)
-
+    # Обновляем только те поля, которые переданы в data
+    if 'login' in data:
+        user.login = data['login']
+    if 'password' in data:
+        user.password = data['password']
+    if 'dormNumber' in data:
+        user.dormNumber = data['dormNumber']
+    if 'floor' in data:
+        user.floor = data['floor']
+    if 'block' in data:
+        user.block = data['block']
+    if 'room' in data:
+        user.room = data['room']
+    if 'contractNumber' in data:
+        user.contractNumber = data['contractNumber']
+    if 'roles' in data:
+        user.roles = data['roles']
+    if 'profile_image' in data:
+        user.profile_image = data['profile_image']
     db.session.commit()
-    return jsonify({"message": "User updated successfully"}), 200
+
 
 def delete_user(user_id):
     user = User.query.get(user_id)
     if not user:
-        return jsonify({"message": "User not found"}), 404
+        return
 
     db.session.delete(user)
     db.session.commit()
-    return jsonify({"message": "User deleted successfully"}), 200
 
 def add_cpd_history(data):
+    print(data)
     new_cpd = CPDHistory(
         user_id=data['user_id'],
-        date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
+        date= datetime.datetime.now().date(),
         count=data['count'],
-        reason=data['reason']
+        reason=data['reason'],
+        who_id=data['who_id']
     )
     db.session.add(new_cpd)
     db.session.commit()
-    return jsonify({"message": "CPDHistory entry created successfully", "cpd_id": new_cpd.id}), 201
 
 
 def update_cpd_history(cpd_id, data):
     cpd_entry = CPDHistory.query.get(cpd_id)
-    if not cpd_entry:
-        return jsonify({"message": "CPDHistory entry not found"}), 404
+    if not cpd_entry: return
 
     cpd_entry.date = datetime.strptime(data.get('date', str(cpd_entry.date)), '%Y-%m-%d').date()
     cpd_entry.count = data.get('count', cpd_entry.count)
     cpd_entry.reason = data.get('reason', cpd_entry.reason)
 
     db.session.commit()
-    return jsonify({"message": "CPDHistory entry updated successfully"}), 200
 
 def delete_cpd_history(cpd_id):
     cpd_entry = CPDHistory.query.get(cpd_id)
@@ -386,7 +435,6 @@ def delete_cpd_history(cpd_id):
 
     db.session.delete(cpd_entry)
     db.session.commit()
-    return jsonify({"message": "CPDHistory entry deleted successfully"}), 200
 
 
 def add_task(data):
@@ -400,7 +448,6 @@ def add_task(data):
     )
     db.session.add(new_task)
     db.session.commit()
-    return jsonify({"message": "Task created successfully", "task_id": new_task.id}), 201
 
 def update_task(task_id, data):
     task = Task.query.get(task_id)
@@ -415,42 +462,83 @@ def update_task(task_id, data):
     task.responded_logins = data.get('responded_logins', task.responded_logins)
 
     db.session.commit()
-    return jsonify({"message": "Task updated successfully"}), 200
 
 
 def delete_task(task_id):
     task = Task.query.get(task_id)
     if not task:
-        return jsonify({"message": "Task not found"}), 404
-
+        return
     db.session.delete(task)
     db.session.commit()
-    return jsonify({"message": "Task deleted successfully"}), 200
 
+
+
+def get_admin_by_login(login):
+    if check_user_login(login):
+        user = get_user_info_by_login(login)
+        return user['user']['admin_right']
+    
+def get_admin_by_id(id):
+    if check_user_id(id):
+        user = get_user_info_by_id(id)
+        return user['user']['admin_right']
+    
+# @app.route("/api/get-profile-data")
+# def get_profile_data():
+#     login = request.args.get('login')  
+#     print(login)
+#     info = get_user_info_by_login(login)
+#     password = info['user']['password']
+
+#     cpd_data = get_cpd_history_and_balance_by_login(login)
+#     print(cpd_data)
+
+#     json_content = {
+#         "fullName": info["user"]["FIO"],
+#         "status": info["user"]["roles"], # Член Студенческого Совета Общежития, Ответственный за комп. класс, Ответственный за прачечную, Староста, Проживающий
+#         "build": info['user']['dormNumber'],
+#         "floor": info['user']['floor'],
+#         "block": info['user']['block'],
+#         "room": info['user']['room'], 
+#         "kpdScore": cpd_data['total_cpd'],
+#         'profileImage': info['user']['profile_image'],
+
+#     }
+#     return jsonify(json_content)
 
 @app.route("/api/get-profile-data")
 def get_profile_data():
-    login = request.args.get('login')  
-    print(login)
-    info = get_user_info_by_login(login)
-    password = info['user']['password']
-
-    cpd_data = get_cpd_history_and_balance_by_login(login)
+    # Получаем userId из параметров запроса
+    user_id = request.args.get('userId')  
+    print(user_id)
+    if not user_id:
+        return jsonify({"message": "userID is empty"}), 404
+    
+    # Получаем информацию о пользователе по userId
+    info = get_user_info_by_id(user_id)
+    if not info:
+        return jsonify({"message": "User not found"}), 404
+    
+    # Получаем историю КПД и баланс
+    cpd_data = get_cpd_history_and_balance_by_user_id(user_id)
     print(cpd_data)
 
+    # Формируем ответ
     json_content = {
         "fullName": info["user"]["FIO"],
-        "status": info["user"]["roles"], # Член Студенческого Совета Общежития, Ответственный за комп. класс, Ответственный за прачечную, Староста, Проживающий
+        "status": info["user"]["roles"],  # Член Студенческого Совета Общежития, Ответственный за комп. класс и т.д.
         "build": info['user']['dormNumber'],
         "floor": info['user']['floor'],
         "block": info['user']['block'],
         "room": info['user']['room'], 
         "kpdScore": cpd_data['total_cpd'],
-
+        'profileImage': info['user']['profile_image'],
     }
-    return jsonify(json_content)
+    return jsonify(json_content), 200
 
 
+
+@limiter.limit("10 per minute")
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.json
@@ -467,9 +555,109 @@ def login():
         session['login'] = success[1]
         session['password'] = success[2]
         session['profileImg'] = success[3]
-        return jsonify({"message": "Login successful!", 'user_id': success[0], 'login': success[1], 'password': success[2], 'profileImg': success[3]}), 200
+        adminRights = get_admin_by_login(success[1])
+        return jsonify({"message": "Login successful!", 'user_id': success[0], 'login': success[1], 'password': success[2], 'profileImg': success[3], 'admin': adminRights}), 200
     else:
         return jsonify({"message": "Invalid credentials"}), 401
+
+
+
+
+@app.route("/api/users", methods=["GET"])
+def get_users():
+    # Извлекаем всех пользователей из базы данных
+    users = User.query.all()
+
+    # Формируем список пользователей в нужном формате
+    users_list = [
+        {
+            "id": user.id,
+            "name": user.FIO,
+            "username": user.login,
+            "location": f"{user.floor}.{user.block}.{user.room}",  # Формируем местоположение
+            "role": user.roles
+        }
+        for user in users
+    ]
+
+    return jsonify(users_list), 200
+
+@app.route("/api/history", methods=["GET"])
+def get_history():
+    kpds = CPDHistory.query.all()
+
+    # Формируем список пользователей в нужном формате
+    kpd_list = [
+        {
+            "id": info.id,
+            "user_id": info.user_id,
+            "user": get_user_info_by_id(info.user_id)['user']['FIO'],
+            "date": info.date,
+            "count": info.count,
+            "reason": info.reason,
+            "who_id": info.who_id,
+            "who_name": get_user_info_by_id(info.who_id)['user']['FIO'],
+            "action":  "add" if  info.count >= 0 else "substract"
+        }
+        for info in kpds
+    ]
+
+    return jsonify(kpd_list), 200
+
+@app.route("/api/kpd-history", methods=["GET"])
+def get_kpd_history():
+    user_id = request.args.get('userId')  
+    kpds = get_cpd_history_and_balance_by_user_id(user_id)
+    print(kpds)
+    # Формируем список пользователей в нужном формате
+    kpd_list = [
+        {
+            "id": info['id'],
+            "user_id": info['user_id'],
+            "user": get_user_info_by_id(info['user_id'])['user']['FIO'],
+            "date": info['date'],
+            "count": info['count'],
+            "reason": info['reason'],
+            "who_id": info['who_id'],
+            "who_name": get_user_info_by_id(info['who_id'])['user']['FIO'],
+            "action":  "add" if  info['count'] >= 0 else "substract"
+        }
+        for info in kpds['history']
+    ]
+
+    return jsonify(kpd_list), 200
+
+
+
+@limiter.limit("10 per minute")
+@app.route("/api/kpd", methods=["POST"])
+def issue_kpd():
+    data = request.json
+    user_id = data.get("user_id")
+    hours = data.get("hours")
+    reason = data.get("reason")
+    action = data.get("action")
+    who_id = data.get("who_id")
+    
+    # Найдем пользователя по ID
+    user = get_user_info_by_id(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    # Проведем проверку на админа
+    if get_admin_by_id(who_id) == 0:
+        return jsonify({"error": "You are not authorized to perform this action."}), 403
+    
+    # Обработка выдачи или списания
+    if action == "add":
+
+        add_cpd_history({'user_id': user_id, 'count': abs(int(hours)), 'reason': reason, 'who_id': who_id})
+    elif action == "subtract":
+
+        add_cpd_history({'user_id': user_id, 'count': -abs(int(hours)), 'reason': reason, 'who_id': who_id})
+        
+    return jsonify({"message": f"Успешно: {user['user']['FIO']} {action} {abs(int(hours))} [{reason}]"})
+
 
 
 

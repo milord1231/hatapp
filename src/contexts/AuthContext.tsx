@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { toast } from "sonner";
 import Cookies from 'js-cookie';
-
+import { Navigate } from 'react-router-dom';
 interface AuthContextType {
   isAuthenticated: boolean;
   failedAttempts: number;
@@ -90,7 +90,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (isLocked) return;
 
     try {
-      const response = await fetch('http://81.94.150.221:5000/api/login', {
+      const response = await fetch('http://localhost:5000/api/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -125,6 +125,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       Cookies.set('user_id', data.user_id.toString(), { expires: 7 });
       Cookies.set('login', data.login.toString(), { expires: 7 });
       Cookies.set('profileImg', data.profileImg.toString(), { expires: 7 });
+      Cookies.set('admin', data.admin.toString(), { expires: 7 });
 
       setIsAuthenticated(true);
 
@@ -134,15 +135,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // 🚪 Выход
-  const logout = () => {
-    toast.success("Выход выполнен");
-    setIsAuthenticated(false);
-    Cookies.remove('user_id');
-    Cookies.remove('login');
-    Cookies.remove('profileImg');
-  };
 
+  // 🚪 Выход
+
+const logout = () => {
+  toast.success("Выход выполнен");
+  Cookies.remove('user_id');
+  Cookies.remove('login');
+  Cookies.remove('profileImg');
+  Cookies.remove('admin');
+  window.location.reload();
+};
   return (
     <AuthContext.Provider 
       value={{ 

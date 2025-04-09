@@ -11,7 +11,8 @@ import HomePage from "./pages/HomePage";
 import Login from "@/pages/Login";
 import axios from 'axios';
 import PrivateRoute from '@/components/PrivateRoute';
-
+import AdminPanel from '@/pages/AdminPanel';
+import AnotherProfile from '@/pages/AnotherProfile';
 // Убедитесь, что cookies отправляются при запросах
 axios.defaults.withCredentials = true;
 const queryClient = new QueryClient();
@@ -27,9 +28,10 @@ const App = () => (
 
           <Routes>
             <Route path="/" element={ <PrivateRoute><HomePage /></PrivateRoute>} />
-            
+                <Route path="/admin" element={<PrivateRoute><AdminPanel /> </PrivateRoute>} />
                 <Route path="/profile" element={<PrivateRoute><Index /></PrivateRoute>} />
                 <Route path="/kpd-history" element={<PrivateRoute><KpdHistory /></PrivateRoute>} />
+                <Route path="/profile/:userId" element={<AnotherProfile />} />
               
             <Route path="/login" element={<Login />} />
             <Route path="*" element={<NotFound />} />

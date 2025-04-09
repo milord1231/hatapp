@@ -5,10 +5,11 @@ import { useAuth} from '@/contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { UserData } from '@/types/UserInterface.tsx';
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
-import ProfileCard from "@/components/ProfileCard";
-import ProfileHeader from "@/components/ProfileHeader";
+import AnotherProfileCard from "@/components/AnotherProfileCard";
+import AnotherProfileHeader from "@/components/AnotherProfileHeader";
 import { Home } from "lucide-react";
 import { useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';  // Для получения ID из URL
 const Index: React.FC = () => {
 
   const [user, setUser] = useState<UserData>({
@@ -21,34 +22,27 @@ const Index: React.FC = () => {
     kpdScore: 0,
     profileImage: '',
   });
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
 
 
-  const userId = Cookies.get("user_id");
+  const { userId } = useParams<{ userId: string }>();
+  const navigate = useNavigate();
   useEffect(() => {
-    if (!userId) return; // Если нет userId, запрос не выполняем
-
-    setLoading(true);  // Устанавливаем состояние загрузки
-    setError(null);    // Сбрасываем ошибку при новом запросе
-
     fetch(`http://localhost:5000/api/get-profile-data?userId=${userId}`)
       .then((res) => {
         if (!res.ok) {
-          throw new Error('Ошибка сети или сервер вернул ошибку');
+            toast.error("Пользователь не найден");
+            navigate("/profile");
         }
-        return res.json();
+        return res.json(); // Если статус успешный, продолжаем обработку данных
       })
       .then((data: UserData) => {
-        setUser(data);
-        setLoading(false); // Завершаем загрузку
+        setUser(data); // Обновляем данные пользователя
       })
       .catch((err) => {
         console.error("Ошибка запроса:", err);
-        setError("Не удалось загрузить данные профиля.");
-        setLoading(false); // Завершаем загрузку при ошибке
+        // Дополнительно можно обработать ошибки в UI (например, показать сообщение)
       });
-  }, [userId]);
+  }, [userId]); // Добавляем зависимость от userId
 
 
 
@@ -65,19 +59,19 @@ const Index: React.FC = () => {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>Профиль</BreadcrumbPage>
+              <BreadcrumbPage>{user.fullName}</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
         
-        <ProfileHeader 
+        <AnotherProfileHeader 
           fullName={user.fullName} 
           status={user.status}
           profileImage={user.profileImage}
         />
         
         <div className="mt-8">
-          <ProfileCard profileData={user} />
+          <AnotherProfileCard profileData={user} />
         </div>
       </div>
     </div>

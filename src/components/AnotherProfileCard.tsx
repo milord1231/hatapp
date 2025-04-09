@@ -5,6 +5,7 @@ import { NavLink } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 import { useAuth } from '@/contexts/AuthContext';
+import { useParams } from 'react-router-dom';  // Для получения ID из URL
 
 interface ProfileData {
   fullName: string;
@@ -24,6 +25,7 @@ interface ProfileCardProps {
 const ProfileCard: React.FC<ProfileCardProps> = ({ profileData }) => {
   const { logout } = useAuth();
   const [isAdmin, setIsAdmin] = useState(false);
+  const { userId } = useParams<{ userId: string }>();
 
   // Устанавливаем isAdmin только один раз, при монтировании компонента
   useEffect(() => {
@@ -36,17 +38,6 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ profileData }) => {
     <Card className="shadow-md relative">
       <CardHeader className="bg-gray-50 border-b flex flex-row justify-between items-center">
         <CardTitle className="text-xl">Информация профиля</CardTitle>
-        <NavLink to="/login">
-          <Button 
-            onClick={logout} 
-            variant="outline" 
-            size="sm" 
-            className="bg-white hover:bg-red-50 text-red-500 border-red-200 hover:border-red-300 transition-colors"
-          >
-            <LogOut className="mr-2 h-4 w-4" />
-            Выйти
-          </Button>
-        </NavLink>
       </CardHeader>
       <CardContent className="pt-6">
         <div className="space-y-6">
@@ -59,7 +50,6 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ profileData }) => {
             <div className="space-y-1">
               <p className="text-sm text-gray-500">Статус</p>
               <p className={`font-medium`}>{profileData.status}</p>
-              {isAdmin && <NavLink to="/admin" className="underline text-blue-600">Админ-панель</NavLink>}
             </div>
           </div>
 
@@ -71,9 +61,9 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ profileData }) => {
                   <div className={`h-3 w-3 rounded-full ${profileData.kpdScore == 0 ? 'bg-green-500' : profileData.kpdScore <= 10  ? 'bg-yellow-500' : profileData.kpdScore <= 25  ? 'bg-orange-500' : 'bg-red-500'} mr-2`}></div>
                   <span className="font-medium">{profileData.kpdScore}</span>
                 </div>
-                <NavLink to={`/kpd-history?userId=${Cookies.get('user_id')}`} className="ml-3 text-sm text-blue-600 hover:underline">
-                  История
-                </NavLink>
+                {isAdmin && <NavLink to={`/kpd-history?userId=${userId}`} className="ml-3 text-sm text-blue-600 hover:underline">
+                                  История
+                                </NavLink>}
               </div>
             </div>
             

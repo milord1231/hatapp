@@ -6,4 +6,5 @@ export interface UserData {
     block: number;
     room: number;
     kpdScore: number;
+    profileImage: string;
   }
