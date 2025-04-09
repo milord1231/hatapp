@@ -10,6 +10,7 @@ import AnotherProfileHeader from "@/components/AnotherProfileHeader";
 import { Home } from "lucide-react";
 import { useNavigate } from 'react-router-dom';
 import { useParams } from 'react-router-dom';  // Для получения ID из URL
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 const Index: React.FC = () => {
 
   const [user, setUser] = useState<UserData>({
@@ -27,7 +28,7 @@ const Index: React.FC = () => {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
   useEffect(() => {
-    fetch(`http://localhost:5000/api/get-profile-data?userId=${userId}`)
+    fetch(`${API_BASE}/api/get-profile-data?userId=${userId}`)
       .then((res) => {
         if (!res.ok) {
             toast.error("Пользователь не найден");

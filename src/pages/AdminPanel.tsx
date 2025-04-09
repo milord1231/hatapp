@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import Cookies from 'js-cookie';
 import { toast } from "sonner";
-
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 interface User {
   id: number;
   name: string;
@@ -59,14 +59,14 @@ const AdminPanel = () => {
 
   useEffect(() => {
     // Получаем данные пользователей с API
-    fetch('http://localhost:5000/api/users')
+    fetch(`${API_BASE}/api/users`)
       .then(response => response.json())
       .then(data => {
         setUsers(data);
         setFilteredUsers(data);
       });
     // Получаем историю с API
-    fetch('http://localhost:5000/api/history')
+    fetch(`${API_BASE}/api/history`)
       .then(response => response.json())
       .then(data => setHistory(data));
 
@@ -102,7 +102,7 @@ const AdminPanel = () => {
     }
 
     const action = isAdd ? 'add' : 'subtract';
-    fetch('http://localhost:5000/api/kpd', {
+    fetch(`${API_BASE}/api/kpd`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, ReactNode, useEffect } from
 import { toast } from "sonner";
 import Cookies from 'js-cookie';
 import { Navigate } from 'react-router-dom';
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 interface AuthContextType {
   isAuthenticated: boolean;
   failedAttempts: number;
@@ -90,7 +91,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (isLocked) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/login', {
+      const response = await fetch(`${API_BASE}/api/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
