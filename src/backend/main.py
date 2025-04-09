@@ -8,9 +8,9 @@ from bs4 import BeautifulSoup
 from flask_limiter import Limiter
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:8080", "http://m170rd.ru", "http://81.94.150.221:8080"], supports_credentials=True)
-
 ALLOWED_ORIGINS = ['http://localhost:8080', 'http://m170rd.ru', "http://81.94.150.221:8080"]
+
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}}, supports_credentials=True)
 
 app.config['SECRET_KEY'] = 'oh_so_secret'
 app.config['SESSION_COOKIE_HTTPONLY'] = True  # Это сделает cookie доступной только серверу (для безопасности)
@@ -22,17 +22,17 @@ limiter = Limiter(app)
 
 
 
-@app.before_request
-def check_authentication():
-    if request.method == 'OPTIONS':
-        return
+# @app.before_request
+# def check_authentication():
+#     if request.method == 'OPTIONS':
+#         return
 
-    origin = request.headers.get("Origin")
-    auth_cookie = request.cookies.get('auth_token')
+#     origin = request.headers.get("Origin")
+#     auth_cookie = request.cookies.get('auth_token')
 
-    if origin not in ['http://localhost:8080', 'http://m170rd.ru'] and not auth_cookie:
-        print("BLOCK ORIGIN: ", origin)
-        return jsonify({"error": "Unauthorized access"}), 403
+#     if origin not in ALLOWED_ORIGINS and not auth_cookie:
+#         print("BLOCK ORIGIN: ", origin)
+#         return jsonify({"error": "Unauthorized access"}), 403
 
 
 # Модели
