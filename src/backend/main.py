@@ -11,19 +11,18 @@ app = Flask(__name__)
 ALLOWED_ORIGINS = ['http://localhost:8080', 'http://m170rd.ru', "http://81.94.150.221:8080"]
 ALLOWED_IPS =  ['127.0.0.1', '81.94.150.221']
 
-CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
+
 
 app.config['SECRET_KEY'] = 'oh_so_secret'
 app.config['SESSION_COOKIE_HTTPONLY'] = True  # Это сделает cookie доступной только серверу (для безопасности)
 app.config['SESSION_COOKIE_SECURE'] = True  # Убедитесь, что cookie передаются через HTTPS
 app.config['SESSION_PERMANENT'] = True  # Сделать сессии постоянными
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'  # Укажи путь к базе данных
-app.config['CORS_HEADERS'] = 'Content-Type'
 db = SQLAlchemy(app)
 limiter = Limiter(app)
 
 
-
+CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
 # @app.before_request
 # def check_origin():
 #     origin = request.environ.get('access-control-allow-origin', 'default value')
@@ -39,15 +38,15 @@ limiter = Limiter(app)
 #     if client_ip not in ALLOWED_IPS:
 #         return jsonify({'error': 'Forbidden access from this IP'}), 403  # 403 Forbidden
 
-@app.before_request
-def check_request_origin():
-    # Получаем IP-адрес, который отправил запрос
-    origin_ip = request.headers.get('X-Real-IP') or request.headers.get('X-Forwarded-For')
-    print(f"Request came from IP: {request.headers.get('X-Real-IP')} {request.headers.get('X-Forwarded-For')}")
+# @app.before_request
+# def check_request_origin():
+#     # Получаем IP-адрес, который отправил запрос
+#     origin_ip = request.headers.get('X-Real-IP') or request.headers.get('X-Forwarded-For')
+#     print(f"Request came from IP: {request.headers.get('X-Real-IP')} {request.headers.get('X-Forwarded-For')}")
 
-    # Если IP не совпадает с разрешённым, отклоняем запрос
-    if request.headers.get('X-Real-IP') not in ALLOWED_IPS or request.headers.get('X-Forwarded-For') not in ALLOWED_IPS:
-        return jsonify({"error": "Unauthorized origin"}), 403
+#     # Если IP не совпадает с разрешённым, отклоняем запрос
+#     if request.headers.get('X-Real-IP') not in ALLOWED_IPS or request.headers.get('X-Forwarded-For') not in ALLOWED_IPS:
+#         return jsonify({"error": "Unauthorized origin"}), 403
 
 # Модели
 class User(db.Model):
