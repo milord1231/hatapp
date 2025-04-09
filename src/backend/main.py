@@ -25,7 +25,7 @@ limiter = Limiter(app)
 
 @app.before_request
 def check_origin():
-    origin = request.environ.get('HTTP_ORIGIN', 'default value')
+    origin = request.environ.get('access-control-allow-origin', 'default value')
     print(origin)
     if origin and origin not in ALLOWED_ORIGINS:
         return jsonify({"error": "Unauthorized origin"}), 403
