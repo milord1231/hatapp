@@ -9,8 +9,9 @@ from flask_limiter import Limiter
 
 app = Flask(__name__)
 ALLOWED_ORIGINS = ['http://localhost:8080', 'http://m170rd.ru', "http://81.94.150.221:8080"]
+ALLOWED_IPS =  ['127.0.0.1', '81.94.150.221']
 
-CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}}, supports_credentials=True)
+CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
 
 app.config['SECRET_KEY'] = 'oh_so_secret'
 app.config['SESSION_COOKIE_HTTPONLY'] = True  # Это сделает cookie доступной только серверу (для безопасности)
@@ -23,12 +24,21 @@ limiter = Limiter(app)
 
 
 
+# @app.before_request
+# def check_origin():
+#     origin = request.environ.get('access-control-allow-origin', 'default value')
+#     print(request.headers.get('Origin'), request.headers.get('access-control-allow-origin', 'default value'), request.headers)
+#     if origin and origin not in ALLOWED_ORIGINS:
+#         return jsonify({"error": "Unauthorized origin"}), 403
+
 @app.before_request
-def check_origin():
-    origin = request.environ.get('access-control-allow-origin', 'default value')
-    print(origin)
-    if origin and origin not in ALLOWED_ORIGINS:
-        return jsonify({"error": "Unauthorized origin"}), 403
+def check_ip():
+    # Получаем IP-адрес клиента
+    client_ip = request.remote_addr
+
+    if client_ip not in ALLOWED_IPS:
+        return jsonify({'error': 'Forbidden access from this IP'}), 403  # 403 Forbidden
+
 
 # Модели
 class User(db.Model):
