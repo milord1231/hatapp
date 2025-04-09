@@ -8,9 +8,9 @@ from bs4 import BeautifulSoup
 from flask_limiter import Limiter
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:8080", "http://m170rd.ru"], supports_credentials=True)
+CORS(app, origins=["http://localhost:8080", "http://m170rd.ru", "http://81.94.150.221:8080"], supports_credentials=True)
 
-ALLOWED_ORIGINS = ['http://localhost:8080', 'http://m170rd.ru']
+ALLOWED_ORIGINS = ['http://localhost:8080', 'http://m170rd.ru', "http://81.94.150.221:8080"]
 
 app.config['SECRET_KEY'] = 'oh_so_secret'
 app.config['SESSION_COOKIE_HTTPONLY'] = True  # Это сделает cookie доступной только серверу (для безопасности)
