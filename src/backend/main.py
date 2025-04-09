@@ -31,6 +31,7 @@ def check_authentication():
     auth_cookie = request.cookies.get('auth_token')
 
     if origin not in ['http://localhost:8080', 'http://m170rd.ru'] and not auth_cookie:
+        print("BLOCK ORIGIN: ", origin)
         return jsonify({"error": "Unauthorized access"}), 403
 
 
