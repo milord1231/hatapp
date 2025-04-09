@@ -17,23 +17,18 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True  # Это сделает cookie д�
 app.config['SESSION_COOKIE_SECURE'] = True  # Убедитесь, что cookie передаются через HTTPS
 app.config['SESSION_PERMANENT'] = True  # Сделать сессии постоянными
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'  # Укажи путь к базе данных
+app.config['CORS_HEADERS'] = 'Content-Type'
 db = SQLAlchemy(app)
 limiter = Limiter(app)
 
 
 
-# @app.before_request
-# def check_authentication():
-#     if request.method == 'OPTIONS':
-#         return
-
-#     origin = request.headers.get("Origin")
-#     auth_cookie = request.cookies.get('auth_token')
-
-#     if origin not in ALLOWED_ORIGINS and not auth_cookie:
-#         print("BLOCK ORIGIN: ", origin)
-#         return jsonify({"error": "Unauthorized access"}), 403
-
+@app.before_request
+def check_origin():
+    origin = request.environ.get('HTTP_ORIGIN', 'default value')
+    print(origin)
+    if origin and origin not in ALLOWED_ORIGINS:
+        return jsonify({"error": "Unauthorized origin"}), 403
 
 # Модели
 class User(db.Model):
