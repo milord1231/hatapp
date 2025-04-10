@@ -1,6 +1,6 @@
 import requests
 
-url = "http://localhost:5000/api/notificate"  # Замени на реальный адрес, если не локально
+url = "http://m170rd.ru/api/notificate"  # Замени на реальный адрес, если не локально
 
 # payload = {
 #   "user_id": 3,
