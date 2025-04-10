@@ -2,9 +2,9 @@ import { useEffect } from 'react';
 import { io } from 'socket.io-client';
 import { toast } from 'sonner';
 import Cookies from 'js-cookie';
-const API_BASE = import.meta.env.VITE_API_BASE_URL;
+const SOCKET_BASE = import.meta.env.VITE_SOCKET_BASE_URL;
 
-const SOCKET_URL = `${API_BASE}`; // или твой продакшн-URL
+const SOCKET_URL = `${SOCKET_BASE}`; // или твой продакшн-URL
 
 const SocketListener: React.FC = () => {
   useEffect(() => {

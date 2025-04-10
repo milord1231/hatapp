@@ -14,8 +14,8 @@ url = "http://m170rd.ru/api/notificate"  # Замени на реальный а
 
 payload = {
   "user_from": "1",
-  "user_to": "1",
-  "message": "Ты лох ебаный"
+  "user_to": "2",
+  "message": "клямбдср"
 }
 
 

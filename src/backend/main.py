@@ -685,16 +685,31 @@ def issue_kpd():
     
     # Обработка выдачи или списания
     if action == "add":
-
+        notificate_user(who_id, user_id, f"Вам выписаны часы КПД: {hours}")
         add_cpd_history({'user_id': user_id, 'count': abs(int(hours)), 'reason': reason, 'who_id': who_id})
     elif action == "subtract":
-
+        notificate_user(who_id, user_id, f"С Вас списаны часы КПД: {hours}")
         add_cpd_history({'user_id': user_id, 'count': -abs(int(hours)), 'reason': reason, 'who_id': who_id})
     current_user = get_jwt_identity()
     return jsonify( kwargs={"message": f"Успешно: {user['user']['FIO']} {action} {abs(int(hours))} [{reason}]", "logged_in_as": current_user})
 
 
 connected_users = {}
+
+
+
+def notificate_user(user_from, user_to, message):
+    # Логика обработки выдачи КПД и сохранения данных в базу.
+
+    # После успешного выполнения действия отправим уведомление через WebSocket:
+    if user_to in connected_users:
+        socketio.emit('notification', {
+            'message': f'{message}'
+        }, room=connected_users[user_to])
+        print(f"notificate: {user_to} '{message}'")
+
+    return jsonify({"message": "message sent"}), 200
+
 
 
 @app.route('/api/notificate', methods=['POST'])
