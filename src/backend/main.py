@@ -30,7 +30,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'  # Укажи п
 db = SQLAlchemy(app)
 limiter = Limiter(app)
 
-CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}, r"/socket.io/*": {"origins": ALLOWED_ORIGINS}}, supports_credentials=True)
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}, r"/socket.io/*": {"origins": "*"}}, supports_credentials=True)
 socketio = SocketIO(app, cors_allowed_origins="*")  # Указываем CORS для socketio
 
 
