@@ -9,6 +9,7 @@ import ProfileCard from "@/components/ProfileCard";
 import ProfileHeader from "@/components/ProfileHeader";
 import { Home } from "lucide-react";
 import { useNavigate } from 'react-router-dom';
+import { authFetch } from '@/components/authFetch';
 const API_BASE = import.meta.env.VITE_API_BASE_URL;
 const Index: React.FC = () => {
 
@@ -33,7 +34,7 @@ const Index: React.FC = () => {
     setLoading(true);  // Устанавливаем состояние загрузки
     setError(null);    // Сбрасываем ошибку при новом запросе
 
-    fetch(`${API_BASE}/api/get-profile-data?userId=${userId}`)
+    authFetch(`${API_BASE}/api/get-profile-data?userId=${userId}`)
       .then((res) => {
         if (!res.ok) {
           throw new Error('Ошибка сети или сервер вернул ошибку');

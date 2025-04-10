@@ -7,6 +7,7 @@ import { Home } from "lucide-react";
 import React, { useEffect, useState } from 'react';
 import { toast } from "sonner";
 import { useNavigate } from 'react-router-dom';
+import { authFetch } from '@/components/authFetch';
 const API_BASE = import.meta.env.VITE_API_BASE_URL;
 interface KpdHistoryItem {
   id: number;
@@ -54,7 +55,7 @@ const KpdHistory = () => {
 
     const fetchKpdHistory = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/kpd-history?userId=${userId}`, {
+        const response = await authFetch(`${API_BASE}/api/kpd-history?userId=${userId}`, {
         });
 
         if (!response.ok) {

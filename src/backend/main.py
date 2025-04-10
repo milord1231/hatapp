@@ -7,12 +7,21 @@ import requests
 from bs4 import BeautifulSoup
 from flask_limiter import Limiter
 
+
+from flask_jwt_extended import create_access_token
+from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import jwt_required
+from flask_jwt_extended import JWTManager
+
+
+
 app = Flask(__name__)
 ALLOWED_ORIGINS = ['http://localhost:8080', 'http://m170rd.ru', "http://81.94.150.221:8080"]
 ALLOWED_IPS =  ['127.0.0.1', '81.94.150.221']
 
 
-
+app.config["JWT_SECRET_KEY"] = "hsdasdjasbdbjb123__@1jnmnA~"  # Change this!
+jwt = JWTManager(app)
 app.config['SECRET_KEY'] = 'oh_so_secret'
 app.config['SESSION_COOKIE_HTTPONLY'] = True  # Это сделает cookie доступной только серверу (для безопасности)
 app.config['SESSION_COOKIE_SECURE'] = True  # Убедитесь, что cookie передаются через HTTPS
@@ -344,7 +353,7 @@ def login_to_kai(username: str, password: str) -> bool:
             user_id = response_data["user_id"]
 
         else:
-            resp = register_user(username, password, 8, 0, 0, 0, 0, first_name, last_name, middle_name, "Проживающий")
+            resp = register_user(username, password, 8, 0, 0, 0, 0, first_name, last_name, middle_name, "Проживающий", 0, profileImg)
             user_id = resp["user_id"]
         update_user(user_id, {'password': password, 'profile_image': profileImg})
         return user_id, username, password, profileImg
@@ -521,6 +530,7 @@ def get_admin_by_id(id):
 #     return jsonify(json_content)
 
 @app.route("/api/get-profile-data")
+@jwt_required()
 def get_profile_data():
     # Получаем userId из параметров запроса
     user_id = request.args.get('userId')  
@@ -536,6 +546,7 @@ def get_profile_data():
     # Получаем историю КПД и баланс
     cpd_data = get_cpd_history_and_balance_by_user_id(user_id)
     print(cpd_data)
+    current_user = get_jwt_identity()
 
     # Формируем ответ
     json_content = {
@@ -547,6 +558,7 @@ def get_profile_data():
         "room": info['user']['room'], 
         "kpdScore": cpd_data['total_cpd'],
         'profileImage': info['user']['profile_image'],
+        "logged_in_as": current_user
     }
     return jsonify(json_content), 200
 
@@ -556,7 +568,7 @@ def get_profile_data():
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.json
-    username = data.get("username")
+    username = data.get("login")
     password = data.get("password")
 
     if not username or not password:
@@ -565,12 +577,17 @@ def login():
     success = login_to_kai(username, password)
 
     if success:
+        access_token = create_access_token(identity=username, expires_delta=datetime.timedelta(days=1))
+        
         session['user_id'] = success[0]
-        session['login'] = success[1]
+        session['username'] = success[1]
         session['password'] = success[2]
         session['profileImg'] = success[3]
         adminRights = get_admin_by_login(success[1])
-        return jsonify({"message": "Login successful!", 'user_id': success[0], 'login': success[1], 'password': success[2], 'profileImg': success[3], 'admin': adminRights}), 200
+        
+        
+        
+        return jsonify(access_token=access_token, kwargs={"message": "Login successful!", 'user_id': success[0], 'username': success[1], 'password': success[2], 'profileImg': success[3], 'admin': adminRights, "access_token": access_token}), 200
     else:
         return jsonify({"message": "Invalid credentials"}), 401
 
@@ -578,6 +595,7 @@ def login():
 
 
 @app.route("/api/users", methods=["GET"])
+@jwt_required()
 def get_users():
     # Извлекаем всех пользователей из базы данных
     users = User.query.all()
@@ -593,10 +611,10 @@ def get_users():
         }
         for user in users
     ]
-
     return jsonify(users_list), 200
 
 @app.route("/api/history", methods=["GET"])
+@jwt_required()
 def get_history():
     kpds = CPDHistory.query.all()
 
@@ -611,18 +629,19 @@ def get_history():
             "reason": info.reason,
             "who_id": info.who_id,
             "who_name": get_user_info_by_id(info.who_id)['user']['FIO'],
-            "action":  "add" if  info.count >= 0 else "substract"
+            "action":  "add" if  info.count >= 0 else "substract",
         }
         for info in kpds
     ]
-
     return jsonify(kpd_list), 200
 
 @app.route("/api/kpd-history", methods=["GET"])
+@jwt_required()
 def get_kpd_history():
     user_id = request.args.get('userId')  
     kpds = get_cpd_history_and_balance_by_user_id(user_id)
     print(kpds)
+    
     # Формируем список пользователей в нужном формате
     kpd_list = [
         {
@@ -634,17 +653,17 @@ def get_kpd_history():
             "reason": info['reason'],
             "who_id": info['who_id'],
             "who_name": get_user_info_by_id(info['who_id'])['user']['FIO'],
-            "action":  "add" if  info['count'] >= 0 else "substract"
+            "action":  "add" if  info['count'] >= 0 else "substract", 
         }
         for info in kpds['history']
     ]
-
     return jsonify(kpd_list), 200
 
 
 
 @limiter.limit("10 per minute")
 @app.route("/api/kpd", methods=["POST"])
+@jwt_required()
 def issue_kpd():
     data = request.json
     user_id = data.get("user_id")
@@ -669,8 +688,8 @@ def issue_kpd():
     elif action == "subtract":
 
         add_cpd_history({'user_id': user_id, 'count': -abs(int(hours)), 'reason': reason, 'who_id': who_id})
-        
-    return jsonify({"message": f"Успешно: {user['user']['FIO']} {action} {abs(int(hours))} [{reason}]"})
+    current_user = get_jwt_identity()
+    return jsonify( kwargs={"message": f"Успешно: {user['user']['FIO']} {action} {abs(int(hours))} [{reason}]", "logged_in_as": current_user})
 
 
 
