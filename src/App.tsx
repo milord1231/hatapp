@@ -13,6 +13,8 @@ import axios from 'axios';
 import PrivateRoute from '@/components/PrivateRoute';
 import AdminPanel from '@/pages/AdminPanel';
 import AnotherProfile from '@/pages/AnotherProfile';
+import SocketListener from "@/components/socketListener";
+
 // Убедитесь, что cookies отправляются при запросах
 axios.defaults.withCredentials = true;
 const queryClient = new QueryClient();
@@ -24,7 +26,8 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-        
+
+        <PrivateRoute><SocketListener /></PrivateRoute>
 
           <Routes>
             <Route path="/" element={ <PrivateRoute><HomePage /></PrivateRoute>} />

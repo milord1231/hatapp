@@ -13,7 +13,7 @@ from flask_jwt_extended import get_jwt_identity
 from flask_jwt_extended import jwt_required
 from flask_jwt_extended import JWTManager
 
-
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
 ALLOWED_ORIGINS = ['http://localhost:8080', 'http://m170rd.ru', "http://81.94.150.221:8080"]
@@ -30,8 +30,10 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'  # Укажи п
 db = SQLAlchemy(app)
 limiter = Limiter(app)
 
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}, r"/socket.io/*": {"origins": ALLOWED_ORIGINS}}, supports_credentials=True)
+socketio = SocketIO(app, cors_allowed_origins="*")  # Указываем CORS для socketio
 
-CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
+
 # @app.before_request
 # def check_origin():
 #     origin = request.environ.get('access-control-allow-origin', 'default value')
@@ -692,9 +694,46 @@ def issue_kpd():
     return jsonify( kwargs={"message": f"Успешно: {user['user']['FIO']} {action} {abs(int(hours))} [{reason}]", "logged_in_as": current_user})
 
 
+connected_users = {}
+
+
+@app.route('/api/notificate', methods=['POST'])
+def notificate():
+    user_from = request.json.get('user_from')
+    user_to = request.json.get('user_to')
+    message = request.json.get('message')
+
+    # Логика обработки выдачи КПД и сохранения данных в базу.
+
+    # После успешного выполнения действия отправим уведомление через WebSocket:
+    if user_to in connected_users:
+        socketio.emit('notification', {
+            'message': f'{message}'
+        }, room=connected_users[user_to])
+        print(f"notificate: {user_to} '{message}'")
+
+    return jsonify({"message": "Уведомление отправлено"}), 200
+
+
+@socketio.on('connect')
+def handle_connect():
+    # Получаем user_id из query-параметра, а не из request.json
+    user_id = request.args.get('user_id')  # Параметр в строке запроса
+    if user_id:
+        connected_users[user_id] = request.sid  # Добавляем пользователя в список подключенных
+        print(f'User {user_id} connected.')
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    for user_id, sid in connected_users.items():
+        if sid == request.sid:
+            del connected_users[user_id]  # Убираем пользователя из списка подключенных
+            print(f'User {user_id} disconnected.')
+            break
 
 
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(host="0.0.0.0", port=5000)
+    # app.run(host="0.0.0.0", port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000)
