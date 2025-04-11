@@ -149,6 +149,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     Cookies.remove("username");
     Cookies.remove("profileImg");
     Cookies.remove("admin");
+    Cookies.remove("tg_id");
     setIsAuthenticated(false);
     window.location.reload();
   };

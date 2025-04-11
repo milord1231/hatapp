@@ -1,12 +1,14 @@
-from flask import Flask, jsonify, request, session
-from flask_cors import CORS
-from flask_sqlalchemy import SQLAlchemy
 import datetime
 import time
 import requests
+import json
 from bs4 import BeautifulSoup
-from flask_limiter import Limiter
 
+from flask import Flask, jsonify, request, session
+from flask_cors import CORS
+from flask_sqlalchemy import SQLAlchemy
+
+from flask_limiter import Limiter
 
 from flask_jwt_extended import create_access_token
 from flask_jwt_extended import get_jwt_identity
@@ -15,9 +17,22 @@ from flask_jwt_extended import JWTManager
 
 from flask_socketio import SocketIO, emit
 
+from pywebpush import webpush, WebPushException
+
+
 app = Flask(__name__)
 ALLOWED_ORIGINS = ['http://localhost:8080', 'http://m170rd.ru', "http://81.94.150.221:8080"]
 ALLOWED_IPS =  ['127.0.0.1', '81.94.150.221']
+
+
+
+VAPID_PRIVATE_KEY = "MiU7eQka-qKoDmZKP9efuWASrWRMcNlRkCexLwuDMSk"
+        
+
+VAPID_PUBLIC_KEY = "BGYV6tsROe7o6Wk797JQ5gxqphVcDgwuaMV4DfuCGMgDytuO35iZY6exuFO7tUK0ULUGEhSqBAF7cVO9u6cnw1A"
+
+
+
 
 
 app.config["JWT_SECRET_KEY"] = "hsdasdjasbdbjb123__@1jnmnA~"  # Change this!
@@ -90,6 +105,14 @@ class Task(db.Model):
     people_need = db.Column(db.Integer)
     people_responded = db.Column(db.Integer)
     responded_logins = db.Column(db.PickleType)
+    
+class Subscription(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    endpoint = db.Column(db.String, nullable=False)
+    p256dh = db.Column(db.String, nullable=False)
+    auth = db.Column(db.String, nullable=False)
+
 
 # Создание базы данных (если еще не создана)
 
@@ -698,6 +721,124 @@ connected_users = {}
 
 
 
+
+def send_push_notification(user_id, title, message):
+    # Найдем подписку для этого пользователя
+    subscription = Subscription.query.filter_by(user_id=user_id).first()
+
+    if not subscription:
+        return jsonify({"error": "No subscription found for user"}), 404
+
+    # Получаем VAPID ключи, которые можно сгенерировать с помощью pywebpush
+
+
+    try:
+        # Отправка уведомления
+        webpush(
+            subscription_info={
+                'endpoint': subscription.endpoint,
+                'keys': {
+                    'p256dh': subscription.p256dh,
+                    'auth': subscription.auth,
+                }
+            },
+            data=json.dumps({
+                "title": title,
+                "message": message
+            }),
+            vapid_private_key=VAPID_PRIVATE_KEY,
+            vapid_claims={
+                "sub": "mailto:your-email@example.com"
+            }
+        )
+        return jsonify({"status": "Notification sent"}), 200
+
+    except WebPushException as e:
+        print("Error sending push notification: ", e)
+        return jsonify({"error": "Failed to send notification"}), 500
+
+
+@app.route('/api/send_notification/<int:user_id>', methods=['POST'])
+@jwt_required()
+def send_notification(user_id):
+    data = request.json
+    title = data.get("title")
+    message = data.get("message")
+
+    if not title or not message:
+        return jsonify({"error": "Title and message are required"}), 400
+
+    return send_push_notification(user_id, title, message)
+
+
+@app.route('/api/unsubscribe_push_notify', methods=['POST'])
+@jwt_required()
+def unsubscribe_push_notify():
+    username = get_jwt_identity()  # Получаем идентификатор текущего пользователя
+    subscription_data = request.json
+    
+    user = get_user_info_by_login(username)
+    user_id = user['user']['id']
+    
+    # Проверяем данные подписки
+    if not subscription_data.get('endpoint'):
+        return jsonify({"error": "Missing required subscription data"}), 400
+    
+    # Находим подписку пользователя в базе данных
+    subscription = Subscription.query.filter_by(user_id=user_id, endpoint=subscription_data['endpoint']).first()
+    if subscription:
+        # Удаляем подписку из базы данных
+        db.session.delete(subscription)
+        db.session.commit()
+        return jsonify({"status": "Unsubscribed successfully"}), 200
+    else:
+        return jsonify({"error": "Subscription not found"}), 404
+
+
+
+
+@app.route('/api/subscribe_push_notify', methods=['POST'])
+@jwt_required()
+def subscribe_push_notify():
+    username = get_jwt_identity()  # Получаем идентификатор текущего пользователя
+    subscription_data = request.json
+    
+    
+    user = get_user_info_by_login(username)
+    user_id = user['user']['id']
+    
+    # Проверяем данные подписки
+    if not subscription_data.get('endpoint') or not subscription_data.get('keys'):
+        return jsonify({"error": "Missing required subscription data"}), 400
+    
+    # Проверка наличия подписки для данного пользователя
+    existing_subscription = Subscription.query.filter_by(user_id=user_id).first()
+    if existing_subscription:
+        # Если подписка уже существует, обновляем ее
+        existing_subscription.endpoint = subscription_data['endpoint']
+        existing_subscription.p256dh = subscription_data['keys']['p256dh']
+        existing_subscription.auth = subscription_data['keys']['auth']
+        db.session.commit()
+        return jsonify({"status": "Subscription updated"}), 200
+
+    # Если подписка не существует, создаем новую
+    subscription = Subscription(
+        user_id=user_id,
+        endpoint=subscription_data['endpoint'],
+        p256dh=subscription_data['keys']['p256dh'],
+        auth=subscription_data['keys']['auth']
+    )
+    
+    db.session.add(subscription)
+    db.session.commit()
+    
+    return jsonify({"status": "Subscription saved"}), 200
+
+
+
+
+
+
 def notificate_user(user_from, user_to, message, action="info"):
     user_to = str(user_to)
     print("Notification emmited ", user_to, connected_users, user_to in connected_users)
@@ -709,6 +850,9 @@ def notificate_user(user_from, user_to, message, action="info"):
         print(f"notificate: {user_to} '{message}'")
 
     return jsonify({"message": "message sent"}), 200
+
+
+
 
 
 

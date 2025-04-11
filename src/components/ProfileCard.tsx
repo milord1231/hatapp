@@ -5,6 +5,7 @@ import { NavLink } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 import { useAuth } from '@/contexts/AuthContext';
+import PushNotification from '@/components/PushNotifications';
 
 interface ProfileData {
   fullName: string;
@@ -36,6 +37,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ profileData }) => {
     <Card className="shadow-md relative">
       <CardHeader className="bg-gray-50 border-b flex flex-row justify-between items-center">
         <CardTitle className="text-xl">Информация профиля</CardTitle>
+        <PushNotification />
         <NavLink to="/login">
           <Button 
             onClick={logout} 
