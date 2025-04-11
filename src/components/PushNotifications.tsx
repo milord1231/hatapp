@@ -27,6 +27,7 @@ const PushNotification = () => {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
+  navigator.serviceWorker.register('/service-worker.js')
   useEffect(() => {
     // Проверка на поддержку push-уведомлений и сервис-воркера
     if ("serviceWorker" in navigator && "PushManager" in window) {

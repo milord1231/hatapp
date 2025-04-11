@@ -23,4 +23,16 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: 'index.html',
+        sw: 'public/service-worker.ts'
+      },
+      output: {
+        entryFileNames: (chunk) =>
+          chunk.name === 'sw' ? 'service-worker.js' : '[name].js'
+      }
+    }
+  }
 }));
