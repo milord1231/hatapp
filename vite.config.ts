@@ -1,23 +1,15 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
-import { componentTagger } from "lovable-tagger";
 
-// https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  base: './',
+  base: "./",
   server: {
     host: "::",
     port: 8080,
-    allowedHosts: [
-      '16f3-193-46-217-15.ngrok-free.app',  // Добавляем твой ngrok домен
-    ],
+    allowedHosts: ["16f3-193-46-217-15.ngrok-free.app"],
   },
-  plugins: [
-    react(),
-    mode === 'development' &&
-    componentTagger(),
-  ].filter(Boolean),
+  plugins: [react()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -26,13 +18,13 @@ export default defineConfig(({ mode }) => ({
   build: {
     rollupOptions: {
       input: {
-        main: 'index.html',
-        sw: 'public/service-worker.ts'
+        main: path.resolve(__dirname, "index.html"),
+        sw: path.resolve(__dirname, "src/service-worker.ts"),
       },
       output: {
         entryFileNames: (chunk) =>
-          chunk.name === 'sw' ? 'service-worker.js' : '[name].js'
-      }
-    }
-  }
+          chunk.name === "service-worker" ? "service-worker.js" : "[name].js",
+      },
+    },
+  },
 }));
