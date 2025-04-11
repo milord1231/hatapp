@@ -2,9 +2,10 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": ["ES2020", "DOM", "DOM.Iterable", "WebWorker"],
     "module": "ESNext",
     "skipLibCheck": true,
+    "types": ["vite/client", "web-push"],
 
     /* Bundler mode */
     "moduleResolution": "bundler",
@@ -26,5 +27,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "public/service-worker.ts"]
+  "include": ["src", "src/service-worker.ts"]
 }

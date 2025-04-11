@@ -40,14 +40,11 @@ const App = () => {
   }, []); // <== не забудь []
 
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/service-worker.ts')
-        .then(registration => {
-          console.log('Service Worker registered:', registration);
-        })
-        .catch(error => {
-          console.error('Service Worker registration failed:', error);
-        });
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/service-worker.js")
+        .then(() => console.log("SW registered"))
+        .catch((err) => console.error("SW registration failed:", err));
     }
   }, []);
   
