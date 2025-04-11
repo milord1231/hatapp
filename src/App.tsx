@@ -40,6 +40,18 @@ const App = () => {
   }, []); // <== не забудь []
 
   useEffect(() => {
+    
+      if (!("serviceWorker" in navigator)) {
+        alert("Service Workers не поддерживаются на этом устройстве");
+        return;
+      }
+      if (!("PushManager" in window)) {
+        alert("Push API не поддерживается на этом устройстве");
+        return;
+      }
+      
+
+
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker
         .register("/service-worker.js")

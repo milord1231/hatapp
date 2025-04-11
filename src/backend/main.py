@@ -21,7 +21,7 @@ from pywebpush import webpush, WebPushException
 
 
 app = Flask(__name__)
-ALLOWED_ORIGINS = ['http://localhost:8080', 'http://m170rd.ru', "http://81.94.150.221:8080"]
+ALLOWED_ORIGINS = ['http://localhost:8080', 'http://m170rd.ru', "http://81.94.150.221:8080", "https://bcfe-193-46-217-15.ngrok-free.app"]
 ALLOWED_IPS =  ['127.0.0.1', '81.94.150.221']
 
 

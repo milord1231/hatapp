@@ -46,40 +46,36 @@ const PushNotification = () => {
   const subscribeUser = async () => {
     if ("serviceWorker" in navigator && "PushManager" in window) {
       try {
-        setIsLoading(true);
-        const vapidPublicKey = 'BGYV6tsROe7o6Wk797JQ5gxqphVcDgwuaMV4DfuCGMgDytuO35iZY6exuFO7tUK0ULUGEhSqBAF7cVO9u6cnw1A'
-
-        const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey)
-
+        console.log("Start subscribing...");
+  
         const registration = await navigator.serviceWorker.ready;
+  
+        const vapidPublicKey = 'BGYV6tsROe7o6Wk797JQ5gxqphVcDgwuaMV4DfuCGMgDytuO35iZY6exuFO7tUK0ULUGEhSqBAF7cVO9u6cnw1A'; // Твой VAPID ключ
+        const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
+  
         const pushSubscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: applicationServerKey, // Замените на ваш VAPID public key
+          applicationServerKey,
         });
-
+  
         setSubscription(pushSubscription);
-        
-        // Отправка подписки на сервер для хранения
-        await axios.post(
-            `${API_BASE}/api/subscribe_push_notify`,
-            {
-              endpoint: pushSubscription.endpoint,
-              keys: pushSubscription.toJSON().keys,
-            },
-            {
-              headers: {
-                Authorization: `Bearer ${Cookies.get("access_token")}`,
-              },
-              withCredentials: true,
-            }
-          );
-
-        console.log("User subscribed:", pushSubscription);
-      } catch (error) {
+  
+        await axios.post(`${API_BASE}/api/subscribe_push_notify`, {
+          endpoint: pushSubscription.endpoint,
+          keys: pushSubscription.toJSON().keys,
+        }, {
+          headers: {
+            Authorization: `Bearer ${Cookies.get("access_token")}`,
+          }
+        });
+  
+        console.log("Push subscription success!", pushSubscription);
+      } catch (error: any) {
         console.error("Subscription failed:", error);
-      } finally {
-        setIsLoading(false);
+        alert("Ошибка подписки: " + error?.message || error);
       }
+    } else {
+      alert("Push API не поддерживается в этом браузере");
     }
   };
 
@@ -116,7 +112,6 @@ const PushNotification = () => {
           className="bg-white border-red-200 hover:bg-red-50 text-red-500 hover:text-red-600 hover:border-red-300 transition-colors"
         >
           <BellOff className="mr-2 h-4 w-4" />
-          Отписаться от уведомлений
         </Button>
       ) : (
         <Button 
@@ -127,7 +122,6 @@ const PushNotification = () => {
           className="bg-blue-500 hover:bg-blue-600 transition-colors"
         >
           <Bell className="mr-2 h-4 w-4" />
-          Подписаться на уведомления
         </Button>
       )}
     </div>
