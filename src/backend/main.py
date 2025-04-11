@@ -685,26 +685,26 @@ def issue_kpd():
     
     # Обработка выдачи или списания
     if action == "add":
-        notificate_user(who_id, user_id, f"Вам выписаны часы КПД: {hours}")
+        notificate_user(who_id, user_id, f"Вам выписаны часы КПД: {hours}", action="info")
         add_cpd_history({'user_id': user_id, 'count': abs(int(hours)), 'reason': reason, 'who_id': who_id})
     elif action == "subtract":
-        notificate_user(who_id, user_id, f"С Вас списаны часы КПД: {hours}")
+        notificate_user(who_id, user_id, f"С Вас списаны часы КПД: {hours}", action="success")
         add_cpd_history({'user_id': user_id, 'count': -abs(int(hours)), 'reason': reason, 'who_id': who_id})
     current_user = get_jwt_identity()
-    return jsonify( kwargs={"message": f"Успешно: {user['user']['FIO']} {action} {abs(int(hours))} [{reason}]", "logged_in_as": current_user})
+    return jsonify({"message": f"Успешно: {user['user']['FIO']} {action} {abs(int(hours))} [{reason}]", "logged_in_as": current_user})
 
 
 connected_users = {}
 
 
 
-def notificate_user(user_from, user_to, message):
-    # Логика обработки выдачи КПД и сохранения данных в базу.
-
-    # После успешного выполнения действия отправим уведомление через WebSocket:
+def notificate_user(user_from, user_to, message, action="info"):
+    user_to = str(user_to)
+    print("Notification emmited ", user_to, connected_users, user_to in connected_users)
     if user_to in connected_users:
         socketio.emit('notification', {
-            'message': f'{message}'
+            'message': f'{message}',
+            'action': f'{action}',
         }, room=connected_users[user_to])
         print(f"notificate: {user_to} '{message}'")
 
@@ -717,13 +717,15 @@ def notificate():
     user_from = request.json.get('user_from')
     user_to = request.json.get('user_to')
     message = request.json.get('message')
+    action = request.json.get('action') if request.json.get('action') else 'info'
 
     # Логика обработки выдачи КПД и сохранения данных в базу.
 
     # После успешного выполнения действия отправим уведомление через WebSocket:
     if user_to in connected_users:
         socketio.emit('notification', {
-            'message': f'{message}'
+            'message': f'{message}',
+            'action': f'{action}',
         }, room=connected_users[user_to])
         print(f"notificate: {user_to} '{message}'")
 
@@ -751,4 +753,4 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
     # app.run(host="0.0.0.0", port=5000)
-    socketio.run(app, host='0.0.0.0', port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)

@@ -6,6 +6,9 @@ const SOCKET_BASE = import.meta.env.VITE_SOCKET_BASE_URL;
 
 const SOCKET_URL = `${SOCKET_BASE}`; // или твой продакшн-URL
 
+const notificationSound = new Audio('/notification.mp3');
+
+
 const SocketListener: React.FC = () => {
   useEffect(() => {
     const user_id = Cookies.get('user_id');
@@ -19,8 +22,24 @@ const SocketListener: React.FC = () => {
       });
 
     // Слушаем событие уведомления
-    socket.on('notification', (data: { message: string }) => {
-      toast.info(data.message);  // Показать уведомление с помощью toaster
+    socket.on('notification', (data: { message: string, action: string}) => {
+      notificationSound.play();
+
+      if (data.action == 'info'){
+        toast.info(data.message);  // Показать уведомление с помощью toaster
+      }
+      else if (data.action == 'warning'){
+        toast.warning(data.message);  // Показать уведомление с помощью toaster
+      }
+      else if (data.action == 'error'){
+        toast.error(data.message);  // Показать уведомление с помощью toaster
+      }
+      else if (data.action == 'success'){
+        toast.success(data.message);  // Показать уведомление с помощью toaster
+      }
+     
+
+      
     });
 
     return () => {

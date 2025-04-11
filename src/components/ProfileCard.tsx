@@ -68,13 +68,17 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ profileData }) => {
               <p className="text-sm text-gray-500">КПД</p>
               <div className="flex items-center">
                 <div className="flex items-center">
-                  <div className={`h-3 w-3 rounded-full ${profileData.kpdScore == 0 ? 'bg-green-500' : profileData.kpdScore <= 10  ? 'bg-yellow-500' : profileData.kpdScore <= 25  ? 'bg-orange-500' : 'bg-red-500'} mr-2`}></div>
+                  <div className={`h-3 w-3 rounded-full ${profileData.kpdScore <= 0 ? 'bg-green-500' : profileData.kpdScore <= 10  ? 'bg-yellow-500' : profileData.kpdScore <= 25  ? 'bg-orange-500' : 'bg-red-500'} mr-2`}></div>
                   <span className="font-medium">{profileData.kpdScore}</span>
                 </div>
                 <NavLink to={`/kpd-history?userId=${Cookies.get('user_id')}`} className="ml-3 text-sm text-blue-600 hover:underline">
                   История
                 </NavLink>
               </div>
+              {profileData.kpdScore <= 0 && <span className="font-medium text-green-700">Ты молодец!</span>}
+              {profileData.kpdScore > 0 && profileData.kpdScore <= 10 && <span className="font-medium text-yellow-500">Не всё так плохо, не грусти</span>}
+              {profileData.kpdScore > 10 && profileData.kpdScore <= 25 && <span className="font-medium text-orange-500">Всё поправимо...</span>}
+              {profileData.kpdScore > 25 && <span className="font-medium text-red-500">Э о а э... мяу.</span>}
             </div>
             
             <div className="space-y-1">
