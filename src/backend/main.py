@@ -708,10 +708,10 @@ def issue_kpd():
     
     # Обработка выдачи или списания
     if action == "add":
-        notificate_user(who_id, user_id, f"Вам выписаны часы КПД: {hours}", action="info")
+        notificate_user(who_id, user_id, f"Вам выписаны часы КПД: {hours}", action="info", title="Выдача КПД")
         add_cpd_history({'user_id': user_id, 'count': abs(int(hours)), 'reason': reason, 'who_id': who_id})
     elif action == "subtract":
-        notificate_user(who_id, user_id, f"С Вас списаны часы КПД: {hours}", action="success")
+        notificate_user(who_id, user_id, f"С Вас списаны часы КПД: {hours}", action="success", title="Списание КПД")
         add_cpd_history({'user_id': user_id, 'count': -abs(int(hours)), 'reason': reason, 'who_id': who_id})
     current_user = get_jwt_identity()
     return jsonify({"message": f"Успешно: {user['user']['FIO']} {action} {abs(int(hours))} [{reason}]", "logged_in_as": current_user})
@@ -839,7 +839,8 @@ def subscribe_push_notify():
 
 
 
-def notificate_user(user_from, user_to, message, action="info"):
+def notificate_user(user_from, user_to, message, action="info", title=None):
+    
     user_to = str(user_to)
     print("Notification emmited ", user_to, connected_users, user_to in connected_users)
     if user_to in connected_users:
@@ -848,7 +849,7 @@ def notificate_user(user_from, user_to, message, action="info"):
             'action': f'{action}',
         }, room=connected_users[user_to])
         print(f"notificate: {user_to} '{message}'")
-
+    send_push_notification(user_to, title, message)
     return jsonify({"message": "message sent"}), 200
 
 
@@ -866,12 +867,7 @@ def notificate():
     # Логика обработки выдачи КПД и сохранения данных в базу.
 
     # После успешного выполнения действия отправим уведомление через WebSocket:
-    if user_to in connected_users:
-        socketio.emit('notification', {
-            'message': f'{message}',
-            'action': f'{action}',
-        }, room=connected_users[user_to])
-        print(f"notificate: {user_to} '{message}'")
+    notificate_user(user_from, user_to, message, action)
 
     return jsonify({"message": "Уведомление отправлено"}), 200
 
