@@ -1082,7 +1082,7 @@ def get_change_requests():
     who_id = user_who['user']['id']
     
     
-    if not checkSuperAdmin_elsePass(who_id):
+    if not checkAdmin_elsePass(who_id):
         return jsonify({"error": "You are not authorized to perform this action."}), 403
     
     
