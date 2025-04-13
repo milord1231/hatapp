@@ -34,7 +34,7 @@
 import requests
 
 # Замените на актуальные значения
-API_URL = "https://m170rd.ru/api/send_notification/1"  # укажи нужный user_id
+API_URL = "https://m170rd.ru/api/send_notification/5"  # укажи нужный user_id
 ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc0NDM5OTY2NywianRpIjoiZWUxMjJhMjYtMjYwYS00NGE5LWJmMTktNTY5M2U2NDQ1MTYzIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IlBhZGVuZXZNSyIsIm5iZiI6MTc0NDM5OTY2NywiY3NyZiI6IjUzNDM4MGZmLTMwYWYtNDI3NS05ZWFiLWRiNjVmYmY2NDdkYSIsImV4cCI6MTc0NDQ4NjA2N30.6pYWbzne8prvsh0xGhDaJkdRbveVI74otPCyvgJgqvs"
 
 headers = {
@@ -43,8 +43,8 @@ headers = {
 }
 
 payload = {
-    "title": "🔥 Новое уведомление!",
-    "message": "Привет! Это тестовое пуш-уведомление 🧪"
+    "title": "А ты...",
+    "message": "не забыл исповедаться?"
 }
 
 response = requests.post(API_URL, json=payload, headers=headers)

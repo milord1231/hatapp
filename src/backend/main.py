@@ -114,14 +114,39 @@ class Subscription(db.Model):
     auth = db.Column(db.String, nullable=False)
 
 
+class ChangeRequest(db.Model):
+    __tablename__ = 'change_requests'
+
+    id = db.Column(db.Integer, primary_key=True)
+    
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user = db.relationship("User", backref=db.backref("change_requests", lazy=True))
+
+    build = db.Column(db.Integer, nullable=False)
+    floor = db.Column(db.Integer, nullable=False)
+    block = db.Column(db.Integer, nullable=False)
+    room = db.Column(db.Integer, nullable=False)
+
+    status = db.Column(db.String(20), default='in_progress')  # 'in_progress' или 'closed'
+    created_at = db.Column(db.DateTime, default=datetime.datetime.now())
+    closed_at = db.Column(db.DateTime, nullable=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "full_name": self.user.full_name if self.user else None,
+            "build": self.build,
+            "floor": self.floor,
+            "block": self.block,
+            "room": self.room,
+            "status": self.status,
+            "created_at": self.created_at.isoformat(),
+            "closed_at": self.closed_at.isoformat() if self.closed_at else None
+        }
+
+
 # Создание базы данных (если еще не создана)
-
-
-
-
-
-
-
 
 def register_user(
     login: str,
@@ -183,9 +208,16 @@ def get_user_info_by_login(login: str) -> dict:
             'room': user.room,
             'contractNumber': user.contractNumber,
             'roles': user.roles,
-            'password': user.password,
             'admin_right': user.admin_right,
             'profile_image': user.profile_image,
+
+            # Подписи для фронта
+            'residence_fields': {
+                'dormNumber': {'label': 'Общежитие', 'value': user.dormNumber},
+                'floor': {'label': 'Этаж', 'value': user.floor},
+                'block': {'label': 'Блок', 'value': user.block},
+                'room': {'label': 'Комната', 'value': user.room},
+},
         }
     }
 
@@ -208,8 +240,15 @@ def get_user_info_by_id(user_id: int) -> dict:
             'roles': user.roles,
             'admin_right': user.admin_right,
             'profile_image': user.profile_image,
+
+            # Подписи для фронта
+            'residence_fields': {
+                    'dormNumber': {'label': 'Общежитие', 'value': user.dormNumber},
+                    'floor': {'label': 'Этаж', 'value': user.floor},
+                    'block': {'label': 'Блок', 'value': user.block},
+                    'room': {'label': 'Комната', 'value': user.room},
         }
-    }
+    }}
 
 
 def get_cpd_history_and_balance_by_user_id(user_id: int) -> dict:
@@ -396,7 +435,8 @@ def check_user_login(login):
 
 
 def check_user_id(user_id):
-    user = User.query.get(user_id)
+    print('USER ID = ', user_id)
+    user = User.query.filter_by(id=user_id).first()
     if user:
         return jsonify({"exists": True, "login": user.login}), 200
     else:
@@ -530,7 +570,21 @@ def get_admin_by_id(id):
     if check_user_id(id):
         user = get_user_info_by_id(id)
         return user['user']['admin_right']
-    
+
+
+def checkAdmin_elsePass(user_id):
+    if check_user_id(user_id):
+        user = get_user_info_by_id(user_id)
+        if user['user']['admin_right'] >= 1 or user['user']['username'] == "PadenevMK": return True
+    return False
+
+def checkSuperAdmin_elsePass(user_id):
+    if check_user_id(user_id):
+        user = get_user_info_by_id(user_id)
+        if user['user']['admin_right'] >= 2 or user['user']['username'] == "PadenevMK": return True
+    return False
+
+
 # @app.route("/api/get-profile-data")
 # def get_profile_data():
 #     login = request.args.get('login')  
@@ -703,8 +757,10 @@ def issue_kpd():
         return jsonify({"error": "User not found"}), 404
     
     # Проведем проверку на админа
-    if get_admin_by_id(who_id) == 0:
+    if not checkSuperAdmin_elsePass(who_id):
         return jsonify({"error": "You are not authorized to perform this action."}), 403
+    
+    
     
     # Обработка выдачи или списания
     if action == "add":
@@ -720,6 +776,23 @@ def issue_kpd():
 connected_users = {}
 
 
+def getAdminList():
+    # Извлекаем пользователей с admin_right = 1 (администраторы)
+    admins = db.session.query(User).filter(User.admin_right >= 1).all()
+    # Преобразуем список администраторов в формат JSON
+    admin_list = [
+        {
+            'id': admin.id,
+            'name': admin.FIO,
+            'username': admin.login,
+            'admin_right': admin.admin_right,
+        }
+        for admin in admins
+    ]
+    print(admin_list)
+
+    return admin_list
+
 
 
 def send_push_notification(user_id, title, message):
@@ -730,8 +803,6 @@ def send_push_notification(user_id, title, message):
         return jsonify({"error": "No subscription found for user"}), 404
 
     # Получаем VAPID ключи, которые можно сгенерировать с помощью pywebpush
-
-
     try:
         # Отправка уведомления
         webpush(
@@ -757,10 +828,31 @@ def send_push_notification(user_id, title, message):
         print("Error sending push notification: ", e)
         return jsonify({"error": "Failed to send notification"}), 500
 
+def notificate_user(user_from, user_to, message, action="info", title=None):
+    
+    user_to = str(user_to)
+    print("Notification emmited ", user_to, connected_users, user_to in connected_users)
+    if user_to in connected_users:
+        socketio.emit('notification', {
+            'message': f'{message}',
+            'action': f'{action}',
+        }, room=connected_users[user_to])
+        print(f"notificate: {user_to} '{message}'")
+    send_push_notification(user_to, title, message)
+    return jsonify({"message": "message sent"}), 200
+
 
 @app.route('/api/send_notification/<int:user_id>', methods=['POST'])
 @jwt_required()
 def send_notification(user_id):
+    username = get_jwt_identity()  # Получаем идентификатор текущего пользователя
+    
+    user = get_user_info_by_login(username)
+    who_id = user['user']['id']
+    
+    if not checkAdmin_elsePass(who_id):
+        return jsonify({"error": "You are not authorized to perform this action."}), 403
+    
     data = request.json
     title = data.get("title")
     message = data.get("message")
@@ -779,6 +871,8 @@ def unsubscribe_push_notify():
     
     user = get_user_info_by_login(username)
     user_id = user['user']['id']
+    
+
     
     # Проверяем данные подписки
     if not subscription_data.get('endpoint'):
@@ -839,37 +933,244 @@ def subscribe_push_notify():
 
 
 
-def notificate_user(user_from, user_to, message, action="info", title=None):
+
+
+@app.route('/api/user/<int:user_id>/status', methods=['PATCH'])
+@jwt_required()
+def update_user_status(user_id):
     
-    user_to = str(user_to)
-    print("Notification emmited ", user_to, connected_users, user_to in connected_users)
-    if user_to in connected_users:
-        socketio.emit('notification', {
-            'message': f'{message}',
-            'action': f'{action}',
-        }, room=connected_users[user_to])
-        print(f"notificate: {user_to} '{message}'")
-    send_push_notification(user_to, title, message)
-    return jsonify({"message": "message sent"}), 200
+    username = get_jwt_identity()  # Получаем идентификатор текущего пользователя
+    
+    user_who = get_user_info_by_login(username)
+    who_id = user_who['user']['id']
+    
+    
+    if not checkSuperAdmin_elsePass(who_id):
+        return jsonify({"error": "You are not authorized to perform this action."}), 403
+    
+    data = request.get_json()
+    user = User.query.get_or_404(user_id)
+
+    roles = data.get("status")
+    admin_right = data.get("admin_right")
+
+    print(data, user)
+    if roles is not None:
+        user.roles = roles
+    if admin_right is not None:
+        user.admin_right = 1
+
+    db.session.commit()
+    return jsonify({"message": "Профиль обновлен"}), 200
 
 
 
+
+@app.route('/api/user/<int:user_id>/residence', methods=['PATCH'])
+@jwt_required()
+def update_user_residence(user_id):
+    
+    username = get_jwt_identity()  # Получаем идентификатор текущего пользователя
+    
+    user_who = get_user_info_by_login(username)
+    who_id = user_who['user']['id']
+    
+    
+    if not checkAdmin_elsePass(who_id):
+        return jsonify({"error": "You are not authorized to perform this action."}), 403
+    
+    
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'status': 'error', 'message': 'Пользователь не найден'}), 404
+
+    data = request.json
+
+    # Обновляем только переданные значения
+    if 'dormNumber' in data:
+        user.dormNumber = data['dormNumber']
+    if 'floor' in data:
+        user.floor = data['floor']
+    if 'block' in data:
+        user.block = data['block']
+    if 'room' in data:
+        user.room = data['room']
+
+    db.session.commit()
+
+    return jsonify({'status': 'success', 'message': 'Данные обновлены'})
 
 
 
 @app.route('/api/notificate', methods=['POST'])
+@jwt_required()
 def notificate():
     user_from = request.json.get('user_from')
     user_to = request.json.get('user_to')
     message = request.json.get('message')
     action = request.json.get('action') if request.json.get('action') else 'info'
 
-    # Логика обработки выдачи КПД и сохранения данных в базу.
-
+    username = get_jwt_identity()  # Получаем идентификатор текущего пользователя
+    
+    user_who = get_user_info_by_login(username)
+    who_id = user_who['user']['id']
+    
+    
+    if not checkSuperAdmin_elsePass(who_id):
+        return jsonify({"error": "You are not authorized to perform this action."}), 403
+    
+    
     # После успешного выполнения действия отправим уведомление через WebSocket:
     notificate_user(user_from, user_to, message, action)
 
     return jsonify({"message": "Уведомление отправлено"}), 200
+
+
+
+# 🟢 Создать запрос
+@app.route("/api/change-request", methods=["POST"])
+@jwt_required()
+def create_change_request():
+    data = request.get_json()
+    # Проверяем, что все обязательные данные есть
+    # if not all(key in data for key in ("user_id", "build", "floor", "block", "room")):
+    #     return jsonify({"error": "Missing required fields"}), 400
+
+    user_id=data.get("user_id"),
+    build=data.get("new_build"),
+    floor=data.get("new_floor"),
+    block=data.get("new_block"),
+    room=data.get("new_room"),
+    status="in_progress"
+    
+    user_id = user_id[0]
+    build = build[0]
+    floor = floor[0]
+    block = block[0]
+    room = room[0]
+
+    
+    change_request = ChangeRequest(
+        user_id=user_id,
+        build=build,
+        floor=floor,
+        block=block,
+        room=room,
+        status=status
+    )
+
+    db.session.add(change_request)
+    db.session.commit()
+    
+    
+    admins = getAdminList()
+    for admin in admins:
+        print(admin)
+        notificate_user(user_id, admin['id'], f"{get_user_info_by_id(user_id)['user']['FIO']} -> № {build} {floor}.{block}.{room}", "info", "Запрос на изменение")
+
+    
+    return jsonify({"message": "Request submitted successfully"}), 201
+
+# 🔵 Получить все запросы
+@app.route('/api/change-request', methods=['GET'])
+@jwt_required()
+def get_change_requests():
+    
+    username = get_jwt_identity()  # Получаем идентификатор текущего пользователя
+    
+    user_who = get_user_info_by_login(username)
+    who_id = user_who['user']['id']
+    
+    
+    if not checkSuperAdmin_elsePass(who_id):
+        return jsonify({"error": "You are not authorized to perform this action."}), 403
+    
+    
+    requests = ChangeRequest.query.order_by(ChangeRequest.created_at.desc()).all()
+    result = []
+    for r in requests:
+        result.append({
+            'id': r.id,
+            'user_id': r.user_id,
+            'build': r.build,
+            'floor': r.floor,
+            'block': r.block,
+            'room': r.room,
+            'status': r.status,
+            'created_at': r.created_at.isoformat(),
+            'username': get_user_info_by_id(r.user_id)['user']['FIO']
+        })
+    return jsonify(result)
+
+# 🟡 Обновить статус (например, закрыть запрос)
+@app.route('/api/change-request/<int:request_id>', methods=['PATCH'])
+@jwt_required()
+def update_change_request_status(request_id):
+    username = get_jwt_identity()  # Получаем идентификатор текущего пользователя
+    
+    user_who = get_user_info_by_login(username)
+    who_id = user_who['user']['id']
+    
+    
+    if not checkAdmin_elsePass(who_id):
+        return jsonify({"error": "You are not authorized to perform this action."}), 403
+    
+    
+    data = request.json
+    request_obj = ChangeRequest.query.get(request_id)
+    if not request_obj:
+        return jsonify({'error': 'Запрос не найден'}), 404
+
+    request_obj.status = data.get('status', request_obj.status)
+    db.session.commit()
+    
+    
+    notificate_user(who_id, request_obj.user_id, f"Ваш запрос изменил статус: Закрыт", "info", "Запрос на изменение")
+    
+    return jsonify({'message': 'Статус обновлён'})
+
+
+@app.route('/api/change-request/delete/<int:request_id>', methods=['DELETE'])
+@jwt_required()
+def delete_change_request(request_id):
+    username = get_jwt_identity()  # Получаем идентификатор текущего пользователя
+    
+    user_who = get_user_info_by_login(username)
+    who_id = user_who['user']['id']
+    
+    
+    if not checkAdmin_elsePass(who_id):
+        return jsonify({"error": "You are not authorized to perform this action."}), 403
+
+    req = db.session.get(ChangeRequest, request_id)
+    if not req:
+        return jsonify({"msg": "Request not found"}), 404
+
+    db.session.delete(req)
+    db.session.commit()
+    
+    notificate_user(who_id, req.user_id, f"Ваш запрос изменил статус: Удалён", "info", "Запрос на изменение")
+    
+    return jsonify({"msg": "Request deleted"}), 200
+
+
+
+@app.route('/api/check-admin', methods=['GET'])
+@jwt_required()
+def check_admin():
+    username = get_jwt_identity()
+    user_who = get_user_info_by_login(username)
+    who_id = user_who['user']['id']
+    user = db.session.get(User, who_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    return jsonify({
+        "is_admin": user.admin_right in [1, 2],
+        "is_super_admin": user.admin_right == 2,
+        "admin_right": user.admin_right
+    }), 200
+
 
 
 @socketio.on('connect')

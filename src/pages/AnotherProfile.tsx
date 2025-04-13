@@ -23,6 +23,7 @@ const Index: React.FC = () => {
     room: 0,
     kpdScore: 0,
     profileImage: '',
+    is_admin: 0,
   });
 
 
@@ -39,6 +40,7 @@ const Index: React.FC = () => {
       })
       .then((data: UserData) => {
         setUser(data); // Обновляем данные пользователя
+
       })
       .catch((err) => {
         console.error("Ошибка запроса:", err);

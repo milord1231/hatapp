@@ -7,4 +7,5 @@ export interface UserData {
     room: number;
     kpdScore: number;
     profileImage: string;
+    is_admin: number;
   }

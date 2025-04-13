@@ -22,6 +22,7 @@ const Index: React.FC = () => {
     room: 0,
     kpdScore: 0,
     profileImage: '',
+    is_admin: 0,
   });
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +30,7 @@ const Index: React.FC = () => {
 
   const userId = Cookies.get("user_id");
   useEffect(() => {
+    
     if (!userId) return; // Если нет userId, запрос не выполняем
 
     setLoading(true);  // Устанавливаем состояние загрузки

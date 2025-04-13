@@ -6,15 +6,20 @@ import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 import { useAuth } from '@/contexts/AuthContext';
 import PushNotification from '@/components/PushNotifications';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { useAdminAccess } from '@/hooks/useAdminAccess';
 
 interface ProfileData {
   fullName: string;
   status: string;
-  build: number,
-  floor: number,
-  block: number,
-  room: number, 
-  kpdScore: number,
+  build: number;
+  floor: number;
+  block: number;
+  room: number;
+  kpdScore: number;
   profileImage: string;
 }
 
@@ -23,15 +28,74 @@ interface ProfileCardProps {
 }
 
 const ProfileCard: React.FC<ProfileCardProps> = ({ profileData }) => {
-  const { logout } = useAuth();
-  const [isAdmin, setIsAdmin] = useState(false);
 
-  // Устанавливаем isAdmin только один раз, при монтировании компонента
-  useEffect(() => {
-    if (Cookies.get('admin') === '1') {
-      setIsAdmin(true);
+  const { isLoading, isAdmin, isSuperAdmin } = useAdminAccess();
+
+
+   useEffect(() => {
+     if (isLoading) return;  
+   }, []);
+
+
+  const { logout } = useAuth();
+
+  const [requestData, setRequestData] = useState({
+    build: profileData.build.toString(),
+    floor: profileData.floor.toString(),
+    block: profileData.block.toString(),
+    room: profileData.room.toString()
+  });
+
+
+  const [newBuild, setNewBuild] = useState("");
+  const [newFloor, setNewFloor] = useState("");
+  const [newBlock, setNewBlock] = useState("");
+  const [newRoom, setNewRoom] = useState("");
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setRequestData({ ...requestData, [e.target.name]: e.target.value });
+  };
+
+  const handleSendRequest = async () => {
+    const userId = Cookies.get("user_id");
+    const payload = {
+      user_id: Number(userId),
+      old_build: profileData.build,
+      old_floor: profileData.floor,
+      old_block: profileData.block,
+      old_room: profileData.room,
+      new_build: Number(newBuild),
+      new_floor: Number(newFloor),
+      new_block: Number(newBlock),
+      new_room: Number(newRoom),
+      requests: [] // Добавляем поле requests, если оно нужно. Можно указать пустой массив или другие данные.
+    };
+  
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/change-request`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json", 
+          "Authorization": `Bearer ${Cookies.get("access_token")}`
+        },
+        credentials: "include",
+        body: JSON.stringify(payload)
+      });
+  
+      if (res.ok) {
+        toast.info("Запрос отправлен. Ожидайте подтверждения.");
+        setNewBuild(""); setNewFloor(""); setNewBlock(""); setNewRoom("");
+      } else {
+        const error = await res.json();
+        toast.error("Ошибка. Не удалось отправить запрос");
+      }
+    } catch (err) {
+      toast.error("Ошибка сети Проверьте соединение");
     }
-  }, []);
+  };
+  
+
+  
 
   return (
     <Card className="shadow-md relative">
@@ -60,7 +124,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ profileData }) => {
             
             <div className="space-y-1">
               <p className="text-sm text-gray-500">Статус</p>
-              <p className={`font-medium`}>{profileData.status}</p>
+              <p className="font-medium">{profileData.status}</p>
               {isAdmin && <NavLink to="/admin" className="underline text-blue-600">Админ-панель</NavLink>}
             </div>
           </div>
@@ -89,6 +153,42 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ profileData }) => {
                 <p>Общежитие №{profileData.build}, Этаж {profileData.floor}</p>
                 <p>Блок {profileData.block}, Комната {profileData.room}</p>
               </div>
+
+              {!isAdmin && (
+              <div className="p-4">
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button className="mt-4" variant="outline">Запросить изменения</Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Изменение места проживания</DialogTitle>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div>
+                        <Label>Здание</Label>
+                        <Input type="number" value={newBuild} onChange={e => setNewBuild(e.target.value)} />
+                      </div>
+                      <div>
+                        <Label>Этаж</Label>
+                        <Input type="number" value={newFloor} onChange={e => setNewFloor(e.target.value)} />
+                      </div>
+                      <div>
+                        <Label>Блок</Label>
+                        <Input type="number" value={newBlock} onChange={e => setNewBlock(e.target.value)} />
+                      </div>
+                      <div>
+                        <Label>Комната</Label>
+                        <Input type="number" value={newRoom} onChange={e => setNewRoom(e.target.value)} />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button onClick={handleSendRequest}>Отправить</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            )}
             </div>
           </div>
         </div>
