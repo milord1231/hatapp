@@ -417,7 +417,7 @@ def login_to_kai(username: str, password: str) -> bool:
             user_id = response_data["user_id"]
 
         else:
-            resp = register_user(username, password, 8, 0, 0, 0, 0, first_name, last_name, middle_name, "Проживающий", 0, profileImg)
+            resp = register_user(username, password, 8, 0, 0, 0, 0, first_name, last_name, middle_name, "Студент КАИ", 0, profileImg)
             user_id = resp["user_id"]
         update_user(user_id, {'password': password, 'profile_image': profileImg})
         return user_id, username, password, profileImg

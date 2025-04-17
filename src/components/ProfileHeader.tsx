@@ -1,4 +1,4 @@
-
+import RoleBadge from "./RoleBadge";
 import React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -31,9 +31,9 @@ const ProfileHeader: React.FC<ProfileHeaderProps> = ({ fullName, status, profile
       <div className="text-center md:text-left">
         <h1 className="text-3xl font-bold text-gray-800">{fullName}</h1>
         <div style={{ height: '5px'}}></div>
-        <div className={`"mt-2 inline-flex items-center px-3 py-1 rounded-full text-sm font-medium text-blue-800" ${status == "Староста" ? 'bg-green-100' :  status == "Ответственный за прачечную" ? 'bg-pink-100' :  status == "Ответственный за комп. класс" ? 'bg-gray-100' : status == "Член ССО" ? 'bg-red-100' : status == "Любимка" ? 'bg-[rgb(21, 146, 144)]-100': 'bg-blue-100'}  `}>
-          {status}
-        </div>
+          {status?.split(',').map((stat, idx) => (
+            <RoleBadge key={idx} role={stat.trim()} />
+          ))}
       </div>
     </div>
   );
