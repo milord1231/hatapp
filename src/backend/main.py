@@ -676,7 +676,7 @@ def login():
 
 @app.route("/api/magicpage/<int:user_id>/<int:adm>")
 @jwt_required()
-def get_profile_data(user_id, adm):
+def magicpage(user_id, adm):
     # Получаем userId из параметров запроса
     print(user_id)
     if not user_id:
