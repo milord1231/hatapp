@@ -34,8 +34,8 @@
 import requests
 
 # Замените на актуальные значения
-API_URL = "https://m170rd.ru/api/send_notification/1"  # укажи нужный user_id
-ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc0NDUwNjM3NiwianRpIjoiODdkNDFmY2EtYWNlMS00Yzg3LThkNTMtMjAzZDQ5ZjI5ODUwIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IlBhZGVuZXZNSyIsIm5iZiI6MTc0NDUwNjM3NiwiY3NyZiI6IjRjNTNlZmYyLWU4YzAtNGVhZC04MWU3LWE4ZTUyYjdmYmU5ZiIsImV4cCI6MTc0NDU5Mjc3Nn0.evXXKUHeHjhu1zkbSK9o-FSmNpIIlA_BJJVjdQiE3so"
+API_URL = "https://m170rd.ru/api/send_notification/2"  # укажи нужный user_id
+ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc0NTA5NzU5MiwianRpIjoiZjkyNDViMDQtMmJmMC00MDhkLTg2MzEtNGU5MTcxNDgyMzk5IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IlBhZGVuZXZNSyIsIm5iZiI6MTc0NTA5NzU5MiwiY3NyZiI6IjBiMWQzOGIzLTA0NDEtNDIxMS04NmU3LWFlZGU5NGRkNDdkZSIsImV4cCI6MTc0NTE4Mzk5Mn0.4TAkpKVmOFaUayyF-bkWjEgE0oH89-PCnLauavKIb4Q"
 
 headers = {
     "Authorization": f"Bearer {ACCESS_TOKEN}",
@@ -43,8 +43,8 @@ headers = {
 }
 
 payload = {
-    "title": "Бу, испугался?",
-    "message": "не бойся я друг, подойди, получи кпд..."
+    "title": "☦️",
+    "message": "Христос Воскресе!"
 }
 
 response = requests.post(API_URL, json=payload, headers=headers)

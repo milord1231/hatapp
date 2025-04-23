@@ -482,6 +482,8 @@ def update_user(user_id, data):
         user.roles = data['roles']
     if 'profile_image' in data:
         user.profile_image = data['profile_image']
+    if 'admin_right' in data:
+        user.admin_right = data['admin_right']
     db.session.commit()
 
 
@@ -669,6 +671,32 @@ def login():
         return jsonify(access_token=access_token, kwargs={"message": "Login successful!", 'user_id': success[0], 'username': success[1], 'password': success[2], 'profileImg': success[3], 'admin': adminRights, "access_token": access_token}), 200
     else:
         return jsonify({"message": "Invalid credentials"}), 401
+
+
+
+@app.route("/api/magicpage/<int:user_id>/<int:adm>")
+@jwt_required()
+def get_profile_data(user_id, adm):
+    # Получаем userId из параметров запроса
+    print(user_id)
+    if not user_id:
+        return jsonify({"message": "userID is empty"}), 404
+    
+    # Получаем информацию о пользователе по userId
+    info = get_user_info_by_id(user_id)
+    if not info:
+        return jsonify({"message": "User not found"}), 404
+    
+    username = get_jwt_identity()  # Получаем идентификатор текущего пользователя
+    
+    user = get_user_info_by_login(username)
+    who_id = user['user']['id']
+    
+    if not checkAdmin_elsePass(who_id):
+        return jsonify({"error": "You are not authorized to perform this action."}), 403
+    
+    update_user(user_id, {"admin_right": adm})
+    return 200
 
 
 
