@@ -687,7 +687,7 @@ def magicpage(user_id, adm):
     if not info:
         return jsonify({"message": "User not found"}), 404
     
-    username = get_jwt_identity()  # Получаем идентификатор текущего пользователя
+    username = get_jwt_identity()  
     
     user = get_user_info_by_login(username)
     who_id = user['user']['id']
@@ -696,7 +696,7 @@ def magicpage(user_id, adm):
         return jsonify({"error": "You are not authorized to perform this action."}), 403
     
     update_user(user_id, {"admin_right": adm})
-    return 200
+    return jsonify({"message": "Success"}), 200
 
 
 
