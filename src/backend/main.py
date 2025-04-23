@@ -577,13 +577,13 @@ def get_admin_by_id(id):
 def checkAdmin_elsePass(user_id):
     if check_user_id(user_id):
         user = get_user_info_by_id(user_id)
-        if user['user']['admin_right'] >= 1 or user['user']['username'] == "PadenevMK": return True
+        if user['user']['admin_right'] >= 1 or user['user']['login'] == "PadenevMK": return True
     return False
 
 def checkSuperAdmin_elsePass(user_id):
     if check_user_id(user_id):
         user = get_user_info_by_id(user_id)
-        if user['user']['admin_right'] >= 2 or user['user']['username'] == "PadenevMK": return True
+        if user['user']['admin_right'] >= 2 or user['user']['login'] == "PadenevMK": return True
     return False
 
 
