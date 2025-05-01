@@ -19,6 +19,7 @@ from flask_socketio import SocketIO, emit
 
 from pywebpush import webpush, WebPushException
 
+from werkzeug.security import generate_password_hash
 
 app = Flask(__name__)
 ALLOWED_ORIGINS = ['http://localhost:8080', 'http://m170rd.ru', "http://81.94.150.221:8080", "https://bcfe-193-46-217-15.ngrok-free.app"]
@@ -145,7 +146,9 @@ class ChangeRequest(db.Model):
             "closed_at": self.closed_at.isoformat() if self.closed_at else None
         }
 
-
+#Приводит к единому виду все логины
+def normalize_login(login: str) -> str:
+    return login[0].upper() + login[1:-2].lower() + login[-2:].upper()
 # Создание базы данных (если еще не создана)
 
 def register_user(
@@ -165,14 +168,17 @@ def register_user(
     
 ) -> dict:
     # Проверка на существование пользователя с таким логином
+    login = normalize_login(login)
     existing_user = User.query.filter_by(login=login).first()
     if existing_user:
         return {'status': 'error', 'message': 'Пользователь с таким логином уже существует'}
+    
+    hashed_password = generate_password_hash(password) #Хэширует
 
     # Создание нового пользователя
     new_user = User(
         login=login,
-        password=password,
+        password=hashed_password,
         dormNumber=dormNumber,
         floor=floor,
         block=block,
@@ -190,8 +196,8 @@ def register_user(
 
     return {'status': 'success', 'user_id': new_user.id}
 
-
 def get_user_info_by_login(login: str) -> dict:
+    login = normalize_login(login)
     user = User.query.filter_by(login=login).first()
     if not user:
         return {'status': 'error', 'message': 'Пользователь не найден'}
@@ -406,8 +412,9 @@ def login_to_kai(username: str, password: str) -> bool:
         profileImg_input = soup.find("img", {"id": "igva_column2_0_avatar"})
         if profileImg_input:
             profileImg = "https://kai.ru/"+profileImg_input.get("src")
-
-        response, status_code = check_user_login(username)
+        
+        normalized_login=normalize_login(username) #Единый вид логина
+        response, status_code = check_user_login(normalized_login)
 
         # Теперь ты можешь безопасно извлечь JSON-данные из response
         response_data = response.get_json()
@@ -417,7 +424,7 @@ def login_to_kai(username: str, password: str) -> bool:
             user_id = response_data["user_id"]
 
         else:
-            resp = register_user(username, password, 8, 0, 0, 0, 0, first_name, last_name, middle_name, "Студент КАИ", 0, profileImg)
+            resp = register_user(normalized_login, password, 8, 0, 0, 0, 0, first_name, last_name, middle_name, "Студент КАИ", 0, profileImg)
             user_id = resp["user_id"]
         update_user(user_id, {'password': password, 'profile_image': profileImg})
         return user_id, username, password, profileImg
@@ -467,7 +474,7 @@ def update_user(user_id, data):
     if 'login' in data:
         user.login = data['login']
     if 'password' in data:
-        user.password = data['password']
+        user.password = generate_password_hash(data['password']) #Сохраняется хэшированный пароль
     if 'dormNumber' in data:
         user.dormNumber = data['dormNumber']
     if 'floor' in data:
