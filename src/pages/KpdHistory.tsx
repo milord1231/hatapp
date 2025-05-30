@@ -8,6 +8,9 @@ import React, { useEffect, useState } from 'react';
 import { toast } from "sonner";
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '@/components/authFetch';
+import { useAdminAccess } from '@/hooks/useAdminAccess';
+import { isSameISOWeek } from 'date-fns';
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL;
 interface KpdHistoryItem {
   id: number;
@@ -25,7 +28,6 @@ const KpdHistory = () => {
   const navigate = useNavigate();
   const [historyData, setHistoryData] = useState<KpdHistoryItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [isAdmin, setAdmin] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   // Извлекаем userId из GET-параметров URL
@@ -33,16 +35,17 @@ const KpdHistory = () => {
   const searchParams = new URLSearchParams(location.search);
   const userId = searchParams.get('userId');
 
+
+  const { isLoading, isAdmin, isSuperAdmin } = useAdminAccess();
+
   useEffect(() => {
-    if (Cookies.get('admin') === '1') {
-          setAdmin(true);
-        }
-    else{
-      if (Cookies.get('user_id') != userId){
+    if (isLoading) return;
+      if (isAdmin || isSuperAdmin) {return;}
+      else if (Cookies.get('user_id') != userId ){
       toast.error('Access to another history is denied for you :)');
       navigate(`/kpd-history?userId=${Cookies.get('user_id')}`);}
     }
-  }, []);
+  );
 
   useEffect(() => {
     if (!userId) {

@@ -11,11 +11,20 @@ const LoginForm: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  const [isLoading, setIsLoading] = useState(false);
+
   
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    login(username, password);
-  };
+  const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setIsLoading(true);
+  try {
+    await login(username, password); // login должен быть async
+  } finally {
+    setIsLoading(false);
+  }
+};
+
   
   // Format the remaining lockout time
   const formatRemainingTime = (ms: number) => {
@@ -101,10 +110,21 @@ const LoginForm: React.FC = () => {
           <Button 
             type="submit" 
             className="w-full"
-            disabled={isLocked || !username || !password}
+            disabled={isLocked || !username || !password || isLoading}
           >
-            {isLocked ? 'Locked' : 'Sign In'}
+            {isLoading ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                </svg>
+                Вход...
+              </span>
+            ) : (
+              isLocked ? 'Locked' : 'Sign In'
+            )}
           </Button>
+
         </form>
       </CardContent>
       

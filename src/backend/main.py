@@ -231,7 +231,6 @@ def get_user_info_by_id(user_id: int) -> dict:
     user = User.query.filter_by(id=user_id).first()
     if not user:
         return {'status': 'error', 'message': 'Пользователь не найден'}
-
     return {
         'status': 'success',
         'user': {
@@ -622,7 +621,6 @@ def checkSuperAdmin_elsePass(user_id):
 def get_profile_data():
     # Получаем userId из параметров запроса
     user_id = request.args.get('userId')  
-    print(user_id)
     if not user_id:
         return jsonify({"message": "userID is empty"}), 404
     
@@ -633,7 +631,6 @@ def get_profile_data():
     
     # Получаем историю КПД и баланс
     cpd_data = get_cpd_history_and_balance_by_user_id(user_id)
-    print(cpd_data)
     current_user = get_jwt_identity()
 
     # Формируем ответ
@@ -685,7 +682,6 @@ def login():
 @jwt_required()
 def magicpage(user_id, adm):
     # Получаем userId из параметров запроса
-    print(user_id)
     if not user_id:
         return jsonify({"message": "userID is empty"}), 404
     
@@ -754,7 +750,6 @@ def get_history():
 def get_kpd_history():
     user_id = request.args.get('userId')  
     kpds = get_cpd_history_and_balance_by_user_id(user_id)
-    print(kpds)
     
     # Формируем список пользователей в нужном формате
     kpd_list = [
@@ -824,7 +819,6 @@ def getAdminList():
         }
         for admin in admins
     ]
-    print(admin_list)
 
     return admin_list
 
@@ -1100,7 +1094,6 @@ def create_change_request():
     
     admins = getAdminList()
     for admin in admins:
-        print(admin)
         notificate_user(user_id, admin['id'], f"{get_user_info_by_id(user_id)['user']['FIO']} -> № {build} {floor}.{block}.{room}", "info", "Запрос на изменение")
 
     
@@ -1124,17 +1117,18 @@ def get_change_requests():
     requests = ChangeRequest.query.order_by(ChangeRequest.created_at.desc()).all()
     result = []
     for r in requests:
-        result.append({
-            'id': r.id,
-            'user_id': r.user_id,
-            'build': r.build,
-            'floor': r.floor,
-            'block': r.block,
-            'room': r.room,
-            'status': r.status,
-            'created_at': r.created_at.isoformat(),
-            'username': get_user_info_by_id(r.user_id)['user']['FIO']
-        })
+        if get_user_info_by_id(r.user_id)['status'] != 'error':
+            result.append({
+                'id': r.id,
+                'user_id': r.user_id,
+                'build': r.build,
+                'floor': r.floor,
+                'block': r.block,
+                'room': r.room,
+                'status': r.status,
+                'created_at': r.created_at.isoformat(),
+                'username': get_user_info_by_id(r.user_id)['user']['FIO']
+            })
     return jsonify(result)
 
 # 🟡 Обновить статус (например, закрыть запрос)
