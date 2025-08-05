@@ -8,17 +8,19 @@ import zipfile
 from flask import Flask, jsonify, request, session
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-
+from werkzeug.exceptions import HTTPException
 from flask_limiter import Limiter
-
+from flask_jwt_extended.exceptions import NoAuthorizationError 
 from flask_jwt_extended import create_access_token
 from flask_jwt_extended import get_jwt_identity
 from flask_jwt_extended import jwt_required
 from flask_jwt_extended import JWTManager
-
 from flask_socketio import SocketIO, emit
-
+from flask import jsonify, request
+from flask_jwt_extended import jwt_required, get_jwt_identity
+import traceback # Для получения полного трейсбека ошибки
 from pywebpush import webpush, WebPushException
+from flask import current_app
 
 from werkzeug.security import generate_password_hash
 from datetime import timedelta
@@ -35,20 +37,35 @@ VAPID_PUBLIC_KEY = "BGYV6tsROe7o6Wk797JQ5gxqphVcDgwuaMV4DfuCGMgDytuO35iZY6exuFO7
 
 def validate_date(date_str):
     try:
-        datetime.strptime(date_str, '%Y-%m-%d')
+        datetime.datetime.strptime(date_str, '%Y-%m-%d')
         return True
     except ValueError:
         return False
 
 
 
-from flask_jwt_extended.exceptions import NoAuthorizationError
-from flask import jsonify
+
 
 @app.errorhandler(NoAuthorizationError)
 def handle_auth_error(e):
     return jsonify({"error": "Missing or invalid JWT"}), 401
 
+@app.errorhandler(Exception)
+def handle_exception(err):
+    # Перехватываем все исключения
+    if isinstance(err, HTTPException):
+        response = err.get_response()
+        # сохраняем оригинальный статус код
+        status_code = err.code
+    else:
+        # Для всех остальных исключений
+        status_code = 500
+        response = {
+            "error": str(err),
+            "status_code": status_code,
+        }
+
+    return jsonify(response), status_code
 
 app.config["JWT_SECRET_KEY"] = "hsdasdjasbdbjb123__@1jnmnA~"  # Change this!
 jwt = JWTManager(app)
@@ -182,8 +199,10 @@ class KPDAssignment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     violation_id = db.Column(db.Integer, db.ForeignKey('kpd_violation.id'))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    assigned_by = db.Column(db.Integer, db.ForeignKey('user.id'))  # Кто назначил
-    hours = db.Column(db.Integer)
+    # Новое поле для хранения часов
+    hours = db.Column(db.Integer) # <-- Исправление 4 (часть 1)
+    # Поле для отслеживания, кто назначил (если нужно)
+    assigned_by = db.Column(db.Integer, db.ForeignKey('user.id')) # Можно добавить, если нужно знать, кто распределил
     confirmed = db.Column(db.Boolean, default=False)
 
 
@@ -243,59 +262,51 @@ def get_user_info_by_login(login: str) -> dict:
     user = User.query.filter_by(login=login).first()
     if not user:
         return {'status': 'error', 'message': 'Пользователь не найден'}
-
-    return {
-        'status': 'success',
-        'user': {
-            'id': user.id,
-            'login': user.login,
-            'FIO': user.FIO,
-            'dormNumber': user.dormNumber,
-            'floor': user.floor,
-            'block': user.block,
-            'room': user.room,
-            'contractNumber': user.contractNumber,
-            'roles': user.roles,
-            'admin_right': user.admin_right,
-            'profile_image': user.profile_image,
-
-            # Подписи для фронта
-            'residence_fields': {
-                'dormNumber': {'label': 'Общежитие', 'value': user.dormNumber},
-                'floor': {'label': 'Этаж', 'value': user.floor},
-                'block': {'label': 'Блок', 'value': user.block},
-                'room': {'label': 'Комната', 'value': user.room},
-},
-        }
-    }
-
+    return {'status': 'success',
+            'user': {'id': user.id,
+                     'login': user.login,
+                     'FIO': user.FIO,   
+                     'dormNumber': user.dormNumber,
+                     'floor': user.floor,
+                     'block': user.block,
+                     'room': user.room,
+                     'contractNumber': user.contractNumber,
+                     'roles': user.roles,
+                     'admin_right': user.admin_right,
+                     'profile_image': user.profile_image,
+                     # Подписи для фронта
+                     'residence_fields': {
+                         'dormNumber': {'label': 'Общежитие', 'value': user.dormNumber},
+                         'floor': {'label': 'Этаж', 'value': user.floor},
+                         'block': {'label': 'Блок', 'value': user.block},
+                         'room': {'label': 'Комната', 'value': user.room},
+                     }}}
+    
 def get_user_info_by_id(user_id: int) -> dict:
+    """Получить информацию о пользователе по его ID."""
     user = User.query.filter_by(id=user_id).first()
+    print(user_id, user)
     if not user:
-        return {'status': 'error', 'message': 'Пользователь не найден'}
-    return {
-        'status': 'success',
-        'user': {
-            'id': user.id,
-            'login': user.login,
-            'FIO': user.FIO,
-            'dormNumber': user.dormNumber,
-            'floor': user.floor,
-            'block': user.block,
-            'room': user.room,
-            'contractNumber': user.contractNumber,
-            'roles': user.roles,
-            'admin_right': user.admin_right,
-            'profile_image': user.profile_image,
-
-            # Подписи для фронта
-            'residence_fields': {
-                    'dormNumber': {'label': 'Общежитие', 'value': user.dormNumber},
-                    'floor': {'label': 'Этаж', 'value': user.floor},
-                    'block': {'label': 'Блок', 'value': user.block},
-                    'room': {'label': 'Комната', 'value': user.room},
-        }
-    }}
+        return get_user_info_by_login(user_id)
+    return {'status': 'success',
+            'user': {'id': user.id,
+                     'login': user.login,
+                     'FIO': user.FIO,   
+                     'dormNumber': user.dormNumber,
+                     'floor': user.floor,
+                     'block': user.block,
+                     'room': user.room,
+                     'contractNumber': user.contractNumber,
+                     'roles': user.roles,
+                     'admin_right': user.admin_right,
+                     'profile_image': user.profile_image,
+                     # Подписи для фронта
+                     'residence_fields': {
+                         'dormNumber': {'label': 'Общежитие', 'value': user.dormNumber},
+                         'floor': {'label': 'Этаж', 'value': user.floor},
+                         'block': {'label': 'Блок', 'value': user.block},
+                         'room': {'label': 'Комната', 'value': user.room},
+                     }}}
 
 
 def get_cpd_history_and_balance_by_user_id(user_id: int) -> dict:
@@ -669,29 +680,64 @@ def checkSuperAdmin_elsePass(user_id):
 #     }
 #     return jsonify(json_content)
 
+
+# Новый эндпоинт для получения списка жильцов
+@app.route('/api/residents', methods=['GET'])
+@jwt_required()
+def get_residents():
+    # Можно добавить фильтрацию по блоку, если нужно
+    # current_user_id = get_jwt_identity()
+    # current_user = User.query.get(current_user_id)
+    # if not current_user:
+    #     return jsonify({"error": "User not found"}), 404
+    # residents = User.query.filter_by(block=current_user.block).all()
+    
+    # Пока возвращаем всех жильцов (или можно фильтровать по общежитию)
+    residents = User.query.all()
+    residents_list = [{
+        'id': r.id,
+        'name': r.FIO,
+        'login': r.login,
+        'room': f"{r.floor}.{r.block.split('.')[-1]}.{r.room}" if r.room else f"{r.floor}.{r.block.split('.')[-1]}",
+        'block': r.block,
+        'floor': r.floor
+    } for r in residents]
+    return jsonify(residents_list), 200
+
 @app.route("/api/get-profile-data")
 @jwt_required()
 def get_profile_data():
     # Получаем userId из параметров запроса
-    user_id = request.args.get('userId')  
-    if not user_id:
-        print("userID is empty", user_id)
-        return jsonify({"message": "userID is empty"}), 404
-    
+    user_id_str = request.args.get('userId')  
+    if not user_id_str:
+        print("userID is empty")
+        return jsonify({"error": "userID is required"}), 400 # 400 Bad Request более уместен
+
+    # Преобразуем user_id в int с обработкой ошибок
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        print(f"Invalid userID format: {user_id_str}")
+        return jsonify({"error": "userID must be an integer"}), 400
+
     # Получаем информацию о пользователе по userId
     info = get_user_info_by_id(user_id)
-    if not info:
+    # Предполагается, что get_user_info_by_id возвращает словарь с ключом 'status'
+    # и значением 'error' если пользователь не найден
+    if info.get('status') == 'error': 
         print("User not found", user_id)
-        return jsonify({"message": "User not found"}), 404
-    
+        return jsonify({"error": info.get('message', 'User not found')}), 404
+
     # Получаем историю КПД и баланс
     cpd_data = get_cpd_history_and_balance_by_user_id(user_id)
+    
     current_user = get_jwt_identity()
-
+    print(current_user, cpd_data)
+    
     # Формируем ответ
     json_content = {
         "fullName": info["user"]["FIO"],
-        "status": info["user"]["roles"],  # Член Студенческого Совета Общежития, Ответственный за комп. класс и т.д.
+        "status": info["user"]["roles"],
         "build": info['user']['dormNumber'],
         "floor": info['user']['floor'],
         "block": info['user']['block'],
@@ -1270,58 +1316,73 @@ def check_admin():
     }), 200
 
 
-# Эндпоинты для КПД
 @app.route('/api/kpd/meetings', methods=['GET'])
 @jwt_required()
 def get_kpd_meetings():
     meetings = KPDMeeting.query.order_by(KPDMeeting.created_at.desc()).all()
-    return jsonify([{
-        'id': m.id,
-        'dates': json.loads(m.dates),
-        'status': m.status,
-        'created_at': m.created_at.isoformat(),
-        'closed_at': m.closed_at.isoformat() if m.closed_at else None
-    } for m in meetings]), 200
+    return jsonify([
+        {
+            'id': m.id,
+            'dates': json.loads(m.dates),
+            'status': m.status,
+            'createdAt': m.created_at.isoformat(),  # Преобразование в ISO-формат
+            'closedAt': m.closed_at.isoformat() if m.closed_at else None
+        }
+        for m in meetings
+    ])
 
 
 
 @app.route('/api/kpd/meetings', methods=['POST'])
 @jwt_required()
 def create_kpd_meeting():
-    if not checkAdmin_elsePass(get_jwt_identity()):
-        return jsonify({"error": "Unauthorized"}), 403
-    
-    data = request.get_json()
-    if not data or 'dates' not in data:
-        return jsonify({"error": "Missing dates"}), 400
-    
+    current_app.logger.info("=== create_kpd_meeting called ===")
     try:
-        # Проверяем даты
+        identity = get_jwt_identity()
+        current_app.logger.info(f"JWT Identity: {identity}")
+        is_admin = checkAdmin_elsePass(identity)
+        current_app.logger.info(f"Admin check result: {is_admin}")
+        if not is_admin:
+            current_app.logger.warning("User not authorized")
+            return jsonify({"error": "Unauthorized"}), 403
+
+        data = request.get_json()
+        current_app.logger.info(f"Request data: {data}")
+        if not data or 'dates' not in data:
+            current_app.logger.warning("Missing 'dates' in request")
+            return jsonify({"error": "Missing dates"}), 400
+
         dates = data['dates']
         if not isinstance(dates, list):
+            current_app.logger.warning("Dates is not a list")
             return jsonify({"error": "Dates should be an array"}), 400
-        
-        if not all(validate_date(d) for d in dates):
-            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
-            
-        # Создаем новое собрание КПД
-        new_meeting = KPDMeeting(
-            dates=json.dumps(dates),
-            status='draft'
-        )
+
+        # Проверяем формат дат
+        for d in dates:
+            current_app.logger.info(f"Validating date: {d}")
+            if not validate_date(d):
+                current_app.logger.warning(f"Invalid date format: {d}")
+                return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+
+        # Создаем собрание
+        current_app.logger.info("Creating new meeting...")
+        new_meeting = KPDMeeting(dates=json.dumps(dates), status='draft')
         db.session.add(new_meeting)
         db.session.commit()
-        
+        current_app.logger.info(f"Meeting created with ID: {new_meeting.id}")
         return jsonify({
             "message": "Meeting created",
             "id": new_meeting.id,
             "dates": dates,
             "status": new_meeting.status
         }), 201
-        
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"Error creating meeting: {e}", exc_info=True) # exc_info=True для полного трейсбека
+        # Возвращаем более информативную ошибку
+        return jsonify({"error": f"Internal error: {type(e).__name__}: {str(e)}"}), 500
+
 
 @app.route('/api/kpd/meetings/<int:meeting_id>', methods=['PUT'])
 @jwt_required()
@@ -1356,29 +1417,93 @@ def get_kpd_violations(meeting_id):
         'file_path': v.file_path
     } for v in violations]), 200
 
+# Новый эндпоинт для получения назначений по собранию (GET)
+@app.route('/api/kpd/meetings/<int:meeting_id>/assignments', methods=['GET'])
+@jwt_required()
+def get_kpd_assignments(meeting_id):
+    # Проверка прав доступа может быть сложнее, здесь упрощено
+    # Например, админ может видеть всё, жилец - только своё блок
+    current_user_login = get_jwt_identity()
+    current_user = User.query.filter_by(login=current_user_login).first()
+    if not current_user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Получаем все назначения для этого собрания
+    assignments = KPDAssignment.query.join(KPDViolation).filter(KPDViolation.meeting_id == meeting_id).all()
+    
+    assignments_list = []
+    for a in assignments:
+        violation = KPDViolation.query.get(a.violation_id)
+        user = User.query.get(a.user_id)
+        assignments_list.append({
+            'id': a.id,
+            'violationId': a.violation_id,
+            'userId': a.user_id,
+            'userName': user.FIO if user else "Неизвестно",
+            'hours': a.hours,
+            'confirmed': a.confirmed,
+            'createdAt': "2023-01-01T00:00:00" # Заглушка, добавьте реальную дату создания если нужно
+        })
+        
+    return jsonify(assignments_list), 200
+
+
+# Исправленный эндпоинт для создания назначений
 @app.route('/api/kpd/meetings/<int:meeting_id>/assignments', methods=['POST'])
 @jwt_required()
 def create_kpd_assignment(meeting_id):
     data = request.json
-    user_id = get_jwt_identity()
+    current_user_login = get_jwt_identity()
+    current_user = User.query.filter_by(login=current_user_login).first()
     
+    if not current_user:
+        return jsonify({"error": "User not found"}), 404
+        
     # Проверяем, является ли пользователь старостой блока
-    user = User.query.get(user_id)
-    if 'block_head' not in user.roles:
-        return jsonify({"error": "Unauthorized"}), 403
-    
+    # Или админом, если админ тоже может распределять
+    # if 'block_head' not in current_user.roles:
+    #     return jsonify({"error": "Unauthorized"}), 403
+
     # Создаем назначения
-    for assignment in data['assignments']:
+    created_assignments = []
+    for assignment_data in data.get('assignments', []):
+        violation_id = assignment_data.get('violation_id')
+        user_id = assignment_data.get('user_id')
+        hours = assignment_data.get('hours', 2) # Значение по умолчанию
+        
+        # Дополнительные проверки: существуют ли violation и user?
+        violation = KPDViolation.query.get(violation_id)
+        user = User.query.get(user_id)
+        if not violation or not user:
+            # Пропускаем или возвращаем ошибку?
+            continue
+            
+        # Проверка, что violation принадлежит этому meeting_id
+        if violation.meeting_id != meeting_id:
+            continue # Или ошибка
+            
         new_assignment = KPDAssignment(
-            violation_id=assignment['violation_id'],
-            user_id=assignment['user_id'],
-            assigned_by=user_id,
-            hours=assignment['hours']
+            violation_id=violation_id,
+            user_id=user_id,
+            hours=hours, # <-- Исправление 4 (часть 2)
+            assigned_by=current_user.id # <-- Исправление 4 (часть 3)
         )
         db.session.add(new_assignment)
-    
-    db.session.commit()
-    return jsonify({"message": "Assignments created"}), 201
+        db.session.flush() # Чтобы получить ID
+        
+        created_assignments.append({
+            'id': new_assignment.id,
+            'violation_id': new_assignment.violation_id,
+            'user_id': new_assignment.user_id,
+            'hours': new_assignment.hours
+        })
+        
+    try:
+        db.session.commit()
+        return jsonify({"message": "Assignments created", "assignments": created_assignments}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/kpd/meetings/<int:meeting_id>/confirm', methods=['POST'])
 @jwt_required()
@@ -1435,62 +1560,92 @@ def upload_kpd_files():
     return jsonify({"message": "File processed", "violation_id": new_violation.id}), 200
 
 
+# Новый эндпоинт для загрузки ZIP-файлов (если фронтенд обращается к /api/kpd/upload-zip)
 @app.route('/api/kpd/upload-zip', methods=['POST'])
 @jwt_required()
 def upload_kpd_zip():
-    if not checkAdmin_elsePass(get_jwt_identity()):
+    # Проверка прав администратора
+    current_user_login = get_jwt_identity()
+    if not checkAdmin_elsePass(current_user_login): # Предполагается, что checkAdmin_elsePass принимает login
         return jsonify({"error": "Unauthorized"}), 403
-    
+        
     if 'file' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
-    
+        
     file = request.files['file']
-    meeting_id = request.form.get('meeting_id')
+    meeting_id = request.form.get('meeting_id') # Получаем ID собрания из формы
     
     if not meeting_id:
         return jsonify({"error": "Meeting ID is required"}), 400
-    
-    # Сохраняем ZIP файл
-    zip_path = f"uploads/kpd/{meeting_id}/{file.filename}"
-    os.makedirs(os.path.dirname(zip_path), exist_ok=True)
-    file.save(zip_path)
-    
-    # Обрабатываем ZIP архив
+        
     try:
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        meeting_id = int(meeting_id)
+    except ValueError:
+        return jsonify({"error": "Invalid meeting ID"}), 400
+        
+    meeting = KPDMeeting.query.get(meeting_id)
+    if not meeting:
+        return jsonify({"error": "Meeting not found"}), 404
+
+    # Создаем директорию для загрузок, если её нет
+    os.makedirs(f"uploads/kpd/{meeting_id}", exist_ok=True)
+    
+    # Сохраняем файл
+    filename = f"acts_{int(time.time())}.zip" # Уникальное имя
+    file_path = os.path.join(f"uploads/kpd/{meeting_id}", filename)
+    file.save(file_path)
+
+    # Распаковываем ZIP
+    try:
+        with zipfile.ZipFile(file_path, 'r') as zip_ref:
             zip_ref.extractall(f"uploads/kpd/{meeting_id}/extracted")
-            
-            # Обрабатываем каждый DOCX файл
-            for docx_file in os.listdir(f"uploads/kpd/{meeting_id}/extracted"):
-                if docx_file.endswith('.docx'):
-                    # Парсим имя файла для получения блока/комнаты (формат: этаж_блок_комната.docx)
-                    filename = os.path.splitext(docx_file)[0]
-                    parts = filename.split('_')
-                    
-                    if len(parts) >= 2:
-                        floor = parts[0]
-                        block = parts[1]
-                        room = parts[2] if len(parts) > 2 else None
+    except zipfile.BadZipFile:
+        os.remove(file_path) # Удаляем поврежденный файл
+        return jsonify({"error": "Invalid ZIP file"}), 400
+
+    # Обрабатываем каждый DOCX файл
+    extracted_dir = f"uploads/kpd/{meeting_id}/extracted"
+    if os.path.exists(extracted_dir):
+        for docx_file in os.listdir(extracted_dir):
+            if docx_file.endswith('.docx'):
+                # Парсим имя файла для получения блока/комнаты (формат: этаж_блок_комната.docx или этаж_блок.docx)
+                filename_without_ext = os.path.splitext(docx_file)[0]
+                parts = filename_without_ext.split('_')
+                if len(parts) >= 2:
+                    try:
+                        floor = int(parts[0])
+                        block = f"{parts[0]}.{parts[1]}" # Формат "этаж.блок"
+                        room = f"{block}.{parts[2]}" if len(parts) > 2 else None # Формат "этаж.блок.комната" или None
                         
                         # Здесь должна быть логика парсинга DOCX файла
                         # и извлечения дат и описаний нарушений
+                        # Пока создаем заглушку
                         
-                        # Пример создания записи о нарушении
-                        violation = KPDViolation(
-                            meeting_id=meeting_id,
-                            date="2023-11-01",  # Извлечь из файла
-                            description="Нарушение порядка",  # Извлечь из файла
-                            floor=floor,
-                            block=block,
-                            room=room,
-                            file_path=f"uploads/kpd/{meeting_id}/extracted/{docx_file}"
-                        )
-                        db.session.add(violation)
-        
+                        # Пример: извлекаем все даты из meeting.dates
+                        meeting_dates = json.loads(meeting.dates) if meeting.dates else []
+                        
+                        for date_str in meeting_dates: # Для примера создаем нарушение на каждую дату собрания
+                            # В реальности нужно парсить DOCX
+                            violation = KPDViolation(
+                                meeting_id=meeting_id,
+                                date=date_str, # Извлечь из файла
+                                description=f"Нарушение из файла {docx_file}", # Извлечь из файла
+                                floor=floor,
+                                block=block,
+                                room=room,
+                                file_path=f"uploads/kpd/{meeting_id}/extracted/{docx_file}"
+                            )
+                            db.session.add(violation)
+                    except (ValueError, IndexError):
+                        # Пропускаем файлы с неправильным именем
+                        print(f"Skipping file with invalid name format: {docx_file}")
+                        continue
+
+    try:
         db.session.commit()
         return jsonify({"message": "Files processed successfully"}), 200
-        
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
 

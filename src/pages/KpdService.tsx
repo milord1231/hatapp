@@ -1,50 +1,59 @@
+// KpdService.tsx (исправленный)
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react"; // Добавлен useCallback
 import { authFetch } from "@/components/authFetch";
 import { useAdminAccess } from "@/hooks/useAdminAccess";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
-import { Home, FileText, Upload, Download, Plus, Trash2, Edit, Check } from "lucide-react";
+import { Home, FileText, Upload, Download, Plus, Trash2, Edit, Check, Calendar, Clock } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/use-toast";
+import { format } from "date-fns";
+import { ru } from "date-fns/locale";
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
+// --- Интерфейсы для типизации данных ---
 interface KPDMeeting {
   id: number;
-  dates: string[];
+  dates: string[]; // YYYY-MM-DD
   status: 'draft' | 'active' | 'completed';
-  createdAt: string;
-  closedAt?: string;
+  createdAt: string; // ISO string
+  closedAt?: string; // ISO string
 }
 
 interface Violation {
   id: number;
-  date: string;
+  meetingId: number;
+  date: string; // YYYY-MM-DD
   description: string;
   floor: number;
-  block: string;
-  room?: string;
+  block: string; // e.g., "6.5"
+  room?: string; // e.g., "6.5.1"
   filePath: string;
 }
 
 interface AssignedViolation {
-  id: string;
-  userId: string;
-  userName: string;
-  violationId: string;
-  date: string;
+  id: number;
+  violationId: number;
+  userId: number;
+  assignedById: number;
   hours: number;
   confirmed: boolean;
+  createdAt: string; // ISO string
 }
 
 interface Resident {
   id: number;
   name: string;
-  room: string;
-  block: string;
+  login: string;
+  room: string; // e.g., "6.5.1"
+  block: string; // e.g., "6.5"
   floor: number;
 }
 
@@ -54,7 +63,7 @@ interface UserInfo {
   FIO: string;
   dormNumber: number;
   floor: number;
-  block: string;
+  block: string; // e.g., "6.5"
   room: number;
   contractNumber: number;
   roles: string;
@@ -62,36 +71,50 @@ interface UserInfo {
   profile_image: string;
 }
 
+// Новый тип для формы назначения нарушений
+interface NewViolationAssignment {
+  id: string; // Временный ID для новых записей
+  violationId: number;
+  userId: number | null;
+  date: string; // YYYY-MM-DD
+  hours: number;
+}
+
+// Тип для значения, передаваемого в updateViolationAssignment
+type AssignmentValue = string | number | null | boolean;
+
 export default function KpdService() {
+  // --- Состояния ---
   const [kpdMeetings, setKpdMeetings] = useState<KPDMeeting[]>([]);
   const [currentMeeting, setCurrentMeeting] = useState<KPDMeeting | null>(null);
   const [pastMeetings, setPastMeetings] = useState<KPDMeeting[]>([]);
   const [violations, setViolations] = useState<Violation[]>([]);
-  const [assignedViolations, setAssignedViolations] = useState<any[]>([]);
+  const [assignedViolations, setAssignedViolations] = useState<AssignedViolation[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
-  const [newViolations, setNewViolations] = useState<AssignedViolation[]>([]);
+  const [newViolations, setNewViolations] = useState<NewViolationAssignment[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [currentUserInfo, setCurrentUserInfo] = useState<UserInfo | null>(null);
-  
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Для вкладки администратора
+  const [newMeetingDates, setNewMeetingDates] = useState<string[]>([]);
+  const [newMeetingDateInput, setNewMeetingDateInput] = useState<string>("");
+  const [newMeetingTime, setNewMeetingTime] = useState<string>("12:00"); // HH:mm
+
   const { roles, userId } = useAuth();
   const { isAdmin } = useAdminAccess();
   const isBlockLeader = roles.includes("block_head");
 
-  useEffect(() => {
-    loadUserInfo();
-    loadKPDData();
-    loadResidents();
-  }, [userId]);
-
-  const loadUserInfo = async () => {
+  // --- Функции загрузки данных (обернуты в useCallback) ---
+  const loadUserInfo = useCallback(async () => {
     if (!userId) return;
-    
     try {
-      const res = await authFetch(`/api/get-profile-data?userId=${userId}`);
+      const res = await authFetch(`${API_BASE}/api/get-profile-data?userId=${userId}`);
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
       
-      // Преобразуем данные в ожидаемый формат
       const userInfo: UserInfo = {
         id: userId,
         login: data.username || "",
@@ -100,125 +123,258 @@ export default function KpdService() {
         floor: data.floor || 0,
         block: data.block || "",
         room: data.room || 0,
-        contractNumber: 0, // Нужно добавить в API
+        contractNumber: 0,
         roles: data.status || "",
         admin_right: isAdmin ? 1 : 0,
         profile_image: data.profileImage || ""
       };
-      
       setCurrentUserInfo(userInfo);
-    } catch (error) {
+    } catch (error: unknown) { // Исправлено: any -> unknown
       console.error("Error loading user info:", error);
+      // Можно дополнительно обработать ошибку, если она является экземпляром Error
+      if (error instanceof Error) {
+          toast({
+            title: "Ошибка загрузки профиля",
+            description: error.message,
+            variant: "destructive",
+          });
+      } else {
+          toast({
+            title: "Ошибка загрузки профиля",
+            description: "Произошла неизвестная ошибка.",
+            variant: "destructive",
+          });
+      }
+      // Не перебрасываем ошибку, так как она обрабатывается здесь
     }
-  };
+  }, [userId, isAdmin]); // Зависимости useCallback
 
-  const loadKPDData = async () => {
+  const loadKPDData = useCallback(async () => {
     try {
-      const meetingsRes = await authFetch("/api/kpd/meetings");
-      const meetingsData = await meetingsRes.json();
+      const meetingsRes = await authFetch(`${API_BASE}/api/kpd/meetings`);
+      if (!meetingsRes.ok) throw new Error(`HTTP error! status: ${meetingsRes.status}`);
+      const meetingsData: KPDMeeting[] = await meetingsRes.json();
       setKpdMeetings(meetingsData);
-      
-      const activeMeeting = meetingsData.find((m: KPDMeeting) => m.status === 'active');
+
+      const activeMeeting = meetingsData.find((m) => m.status === 'active');
       setCurrentMeeting(activeMeeting || null);
-      
+
       if (activeMeeting) {
-        const violationsRes = await authFetch(`/api/kpd/meetings/${activeMeeting.id}/violations`);
-        const violationsData = await violationsRes.json();
+        const [violationsRes, assignmentsRes] = await Promise.all([
+          authFetch(`${API_BASE}/api/kpd/meetings/${activeMeeting.id}/violations`),
+          authFetch(`${API_BASE}/api/kpd/meetings/${activeMeeting.id}/assignments`)
+        ]);
+
+        if (!violationsRes.ok) throw new Error(`HTTP error! status: ${violationsRes.status}`);
+        if (!assignmentsRes.ok) throw new Error(`HTTP error! status: ${assignmentsRes.status}`);
+
+        const violationsData: Violation[] = await violationsRes.json();
+        const assignmentsData: AssignedViolation[] = await assignmentsRes.json();
+
         setViolations(violationsData);
-        
-        const assignmentsRes = await authFetch(`/api/kpd/meetings/${activeMeeting.id}/assignments`);
-        const assignmentsData = await assignmentsRes.json();
         setAssignedViolations(assignmentsData);
       }
-      
-      const past = meetingsData.filter((m: KPDMeeting) => m.status === 'completed');
+
+      const past = meetingsData.filter((m) => m.status === 'completed');
       setPastMeetings(past);
-    } catch (error) {
+    } catch (error: unknown) { // Исправлено: any -> unknown
       console.error("Error loading KPD data:", error);
+      if (error instanceof Error) {
+          toast({
+            title: "Ошибка загрузки КПД",
+            description: error.message,
+            variant: "destructive",
+          });
+      } else {
+          toast({
+            title: "Ошибка загрузки КПД",
+            description: "Произошла неизвестная ошибка.",
+            variant: "destructive",
+          });
+      }
     }
-  };
+  }, []); // Зависимости useCallback (authFetch должно быть стабильным)
 
-  const loadResidents = async () => {
+  const loadResidents = useCallback(async () => {
     try {
-      const res = await authFetch("/api/residents");
-      const data = await res.json();
+      const res = await authFetch(`${API_BASE}/api/residents`); // Предполагаем, что этот эндпоинт существует
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data: Resident[] = await res.json();
       setResidents(data);
-    } catch (error) {
+    } catch (error: unknown) { // Исправлено: any -> unknown
       console.error("Error loading residents:", error);
+      if (error instanceof Error) {
+          toast({
+            title: "Ошибка загрузки жильцов",
+            description: error.message,
+            variant: "destructive",
+          });
+      } else {
+          toast({
+            title: "Ошибка загрузки жильцов",
+            description: "Произошла неизвестная ошибка.",
+            variant: "destructive",
+          });
+      }
+    }
+  }, []); // Зависимости useCallback (authFetch должно быть стабильным)
+
+  // --- Эффекты ---
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        await Promise.all([
+          loadUserInfo(),
+          loadKPDData(),
+          loadResidents()
+        ]);
+      } catch (err: unknown) { // Исправлено: any -> unknown
+        console.error("Ошибка при загрузке данных:", err);
+        setError("Не удалось загрузить данные. Попробуйте позже.");
+        toast({
+          title: "Ошибка",
+          description: "Не удалось загрузить данные.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (userId) {
+      loadData();
+    }
+  }, [userId, loadUserInfo, loadKPDData, loadResidents]); // Исправлено: добавлены зависимости useCallback
+
+  // --- Вспомогательные функции ---
+  const getUserBlock = () => currentUserInfo?.block || "";
+  const getUserFloor = () => currentUserInfo?.floor || 0;
+
+  const getBlockViolations = (block: string) => {
+    return violations.filter(
+      v => v.block === block || (v.room && v.room.startsWith(`${block}.`))
+    );
+  };
+
+  const getAssignedViolationsForBlock = (block: string) => {
+    return assignedViolations.filter((av) => {
+      const violation = violations.find(v => v.id === av.violationId);
+      return violation && (violation.block === block || 
+             (violation.room && violation.room.startsWith(`${block}.`)));
+    });
+  };
+
+  const getResidentsForBlock = (block: string) => {
+    return residents.filter(r => r.block === block);
+  };
+
+  const getUserViolations = () => {
+    const userBlock = getUserBlock();
+    return violations.filter(
+      v => v.block === userBlock || (v.room && v.room.startsWith(`${userBlock}.`))
+    );
+  };
+
+  const formatDate = (dateString: string): string => {
+    if (!dateString) {
+        return "Дата не указана";
+    }
+
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) {
+            throw new Error("Invalid date");
+        }
+        return format(date, 'dd.MM.yyyy', { locale: ru });
+    } catch (error) {
+        console.error("Ошибка при форматировании даты:", error);
+        return "Ошибка формата даты";
+    }
+};
+
+  // --- Функции для взаимодействия с API ---
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setSelectedFile(e.target.files[0]);
     }
   };
 
-  // Получаем информацию о текущем блоке пользователя из API
-  const userBlock = currentUserInfo?.block || "";
-  const userFloor = currentUserInfo?.floor?.toString() || "";
-
-  // Остальные функции остаются без изменений
- // 1. Обновим состояние выбранного файла
-const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-  if (e.target.files && e.target.files.length > 0) {
-    setSelectedFile(e.target.files[0]);
-  }
-};
-
-// 2. Перепишем функцию загрузки
-const handleFileUpload = async () => {
-  if (!selectedFile || !currentMeeting || !isAdmin) {
-    console.error("Не выбраны файл или собрание КПД, или пользователь не админ");
-    return;
-  }
-
-  setIsUploading(true);
-  
-  try {
-    const formData = new FormData();
-    formData.append("file", selectedFile);
-    formData.append("meeting_id", currentMeeting.id.toString());
-
-    const res = await authFetch("/api/kpd/upload-zip", {
-      method: "POST",
-      body: formData,
-      // Не нужно явно указывать Content-Type для FormData!
-      // Браузер сам установит правильный заголовок с boundary
-    });
-
-    if (!res.ok) {
-      throw new Error(`Ошибка сервера: ${res.status}`);
+  const handleFileUpload = async () => {
+    if (!selectedFile || !currentMeeting || !isAdmin) {
+      toast({
+        title: "Ошибка",
+        description: "Файл не выбран, собрание не активно или у вас нет прав администратора.",
+        variant: "destructive",
+      });
+      return;
     }
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      formData.append("meeting_id", currentMeeting.id.toString());
 
-    const result = await res.json();
-    console.log("Файл успешно загружен:", result);
-    
-    // Обновляем данные после успешной загрузки
-    await loadKPDData();
-    setSelectedFile(null);
-    
-  } catch (error) {
-    console.error("Ошибка при загрузке файла:", error);
-    // Можно добавить уведомление для пользователя
-  } finally {
-    setIsUploading(false);
-  }
-};
+      const res = await authFetch(`${API_BASE}/api/kpd/upload-zip`, {
+        method: "POST",
+        body: formData,
+      });
 
-// 3. В JSX обновим input для файла
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || `Ошибка сервера: ${res.status}`);
+      }
 
+      const result = await res.json();
+      console.log("Файл успешно загружен:", result);
+      toast({
+        title: "Успех",
+        description: "Файлы успешно загружены и обработаны.",
+      });
+      await loadKPDData(); // Перезагружаем данные
+      setSelectedFile(null);
+    } catch (error: unknown) { // Исправлено: any -> unknown
+      console.error("Ошибка при загрузке файла:", error);
+      let errorMessage = "Произошла ошибка при загрузке файла.";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      toast({
+        title: "Ошибка загрузки",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const addNewViolationAssignment = () => {
+    const userViolations = getUserViolations();
+    if (userViolations.length === 0) {
+      toast({
+        title: "Нет нарушений",
+        description: "Нет нарушений для распределения.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const defaultViolation = userViolations[0];
     setNewViolations([
       ...newViolations,
       {
         id: `temp-${Date.now()}`,
-        userId: "",
-        userName: "",
-        violationId: "",
-        date: "",
+        violationId: defaultViolation.id,
+        userId: null,
+        date: defaultViolation.date,
         hours: 2,
-        confirmed: false,
       },
     ]);
   };
 
-  const updateViolationAssignment = (id: string, field: string, value) => {
+  const updateViolationAssignment = (id: string, field: keyof NewViolationAssignment, value: AssignmentValue) => { // Исправлено: any -> AssignmentValue
     setNewViolations(
       newViolations.map((v) => 
         v.id === id ? { ...v, [field]: value } : v
@@ -231,7 +387,25 @@ const handleFileUpload = async () => {
   };
 
   const submitViolationAssignments = async () => {
-    if (!currentMeeting) return;
+    if (!currentMeeting || newViolations.length === 0) {
+      toast({
+        title: "Ошибка",
+        description: "Нет активного собрания или нарушений для отправки.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Валидация: все поля должны быть заполнены
+    const isValid = newViolations.every(v => v.userId !== null && v.date && v.hours > 0);
+    if (!isValid) {
+      toast({
+        title: "Ошибка валидации",
+        description: "Пожалуйста, заполните все поля для каждого нарушения.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
       const assignments = newViolations.map(v => ({
@@ -240,121 +414,188 @@ const handleFileUpload = async () => {
         hours: v.hours
       }));
 
-      const res = await authFetch(`/api/kpd/meetings/${currentMeeting.id}/assignments`, {
+      const res = await authFetch(`${API_BASE}/api/kpd/meetings/${currentMeeting.id}/assignments`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ assignments }),
       });
-      
-      if (res.ok) {
-        setNewViolations([]);
-        await loadKPDData();
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || `Ошибка сервера: ${res.status}`);
       }
-    } catch (error) {
+
+      const result = await res.json();
+      console.log("Назначения успешно отправлены:", result);
+      toast({
+        title: "Успех",
+        description: "Нарушения успешно распределены.",
+      });
+      setNewViolations([]); // Очищаем форму
+      await loadKPDData(); // Перезагружаем данные
+    } catch (error: unknown) { // Исправлено: any -> unknown
       console.error("Error submitting assignments:", error);
+      let errorMessage = "Произошла ошибка при отправке назначений.";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      toast({
+        title: "Ошибка отправки",
+        description: errorMessage,
+        variant: "destructive",
+      });
     }
   };
 
   const confirmViolations = async (meetingId: number) => {
+    if (!isAdmin) {
+      toast({
+        title: "Ошибка",
+        description: "У вас нет прав для подтверждения нарушений.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
-      const res = await authFetch(`/api/kpd/meetings/${meetingId}/confirm`, {
+      const res = await authFetch(`${API_BASE}/api/kpd/meetings/${meetingId}/confirm`, {
         method: "POST",
       });
-      
-      if (res.ok) {
-        await loadKPDData();
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || `Ошибка сервера: ${res.status}`);
       }
-    } catch (error) {
+
+      const result = await res.json();
+      console.log("Нарушения подтверждены:", result);
+      toast({
+        title: "Успех",
+        description: "Нарушения подтверждены и часы выданы.",
+      });
+      await loadKPDData(); // Перезагружаем данные
+    } catch (error: unknown) { // Исправлено: any -> unknown
       console.error("Error confirming violations:", error);
+      let errorMessage = "Произошла ошибка при подтверждении нарушений.";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      toast({
+        title: "Ошибка подтверждения",
+        description: errorMessage,
+        variant: "destructive",
+      });
     }
   };
 
-  const getBlockViolations = (block: string) => {
-    if (!violations.length) return [];
-    return violations.filter(
-      v => v.block === block || (v.room && v.room.startsWith(`${block}.`))
-    );
-  };
-
-  const getAssignedViolationsForBlock = (block: string) => {
-    if (!assignedViolations.length) return [];
-    return assignedViolations.filter((av) => {
-      const violation = violations.find(v => v.id === av.violation_id);
-      return violation && (violation.block === block || 
-             (violation.room && violation.room.startsWith(`${block}.`)));
-    });
-  };
-
-  const getResidentsForBlock = (block: string) => {
-    return residents.filter(r => r.block === block);
-  };
-
-  const getUserViolations = () => {
-    if (!violations.length) return [];
-    return violations.filter(
-      v => v.block === userBlock || (v.room && v.room.startsWith(`${userBlock}.`))
-    );
-  };
-
-const createNewMeeting = async (dates: string[]) => {
-  try {
-    const res = await authFetch("/api/kpd/meetings", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ dates }),
-    });
-    
-    if (!res.ok) {
-      const errorData = await res.json();
-      throw new Error(errorData.error || "Failed to create meeting");
+  const createNewMeeting = async () => {
+    if (!isAdmin || newMeetingDates.length === 0) {
+      toast({
+        title: "Ошибка",
+        description: "Укажите даты собрания или у вас нет прав администратора.",
+        variant: "destructive",
+      });
+      return;
     }
-    
-    const data = await res.json();
-    console.log("Meeting created:", data);
-    await loadKPDData();
-    return data;
-    
-  } catch (error) {
-    console.error("Error creating meeting:", error);
-    // Можно добавить уведомление об ошибке
-    throw error;
-  }
-};
+    try {
+      const res = await authFetch(`${API_BASE}/api/kpd/meetings`, {
+        method: "POST",
+        body: JSON.stringify({ dates: newMeetingDates }),
+      });
 
-// Использование:
-const handleCreateMeeting = async () => {
-  try {
-    const dates = ["2023-11-01"]; // Получайте даты из формы
-    await createNewMeeting(dates);
-    // Уведомление об успехе
-  } catch (error) {
-    // Обработка ошибки
-  }
-};
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || `Ошибка сервера: ${res.status}`);
+      }
+
+      const data = await res.json();
+      console.log("Meeting created:", data);
+      toast({
+        title: "Успех",
+        description: "Новое собрание КПД создано.",
+      });
+      setNewMeetingDates([]); // Очищаем форму
+      setNewMeetingDateInput("");
+      await loadKPDData(); // Перезагружаем данные
+    } catch (error: unknown) { // Исправлено: any -> unknown
+      console.error("Error creating meeting:", error);
+      let errorMessage = "Произошла ошибка при создании собрания.";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      toast({
+        title: "Ошибка создания",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const addDateToNewMeeting = () => {
+    if (newMeetingDateInput && !newMeetingDates.includes(newMeetingDateInput)) {
+      setNewMeetingDates([...newMeetingDates, newMeetingDateInput]);
+      setNewMeetingDateInput("");
+    }
+  };
+
+  const removeDateFromNewMeeting = (date: string) => {
+    setNewMeetingDates(newMeetingDates.filter(d => d !== date));
+  };
 
   const activateMeeting = async (meetingId: number) => {
+    if (!isAdmin) {
+      toast({
+        title: "Ошибка",
+        description: "У вас нет прав для активации собрания.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
-      const res = await authFetch(`/api/kpd/meetings/${meetingId}`, {
+      const res = await authFetch(`${API_BASE}/api/kpd/meetings/${meetingId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ status: 'active' }),
       });
-      
-      if (res.ok) {
-        await loadKPDData();
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || `Ошибка сервера: ${res.status}`);
       }
-    } catch (error) {
+
+      const result = await res.json();
+      console.log("Meeting activated:", result);
+      toast({
+        title: "Успех",
+        description: "Собрание КПД активировано.",
+      });
+      await loadKPDData(); // Перезагружаем данные
+    } catch (error: unknown) { // Исправлено: any -> unknown
       console.error("Error activating meeting:", error);
+      let errorMessage = "Произошла ошибка при активации собрания.";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      toast({
+        title: "Ошибка активации",
+        description: errorMessage,
+        variant: "destructive",
+      });
     }
   };
 
-  // Остальная часть компонента остается без изменений
+  // --- Рендеринг ---
+  if (isLoading) {
+    return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Загрузка...</div>;
+  }
+
+  if (error) {
+    return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-red-500">{error}</div>;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8">
@@ -372,7 +613,7 @@ const handleCreateMeeting = async () => {
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        
+
         <Card>
           <CardHeader>
             <CardTitle>Сервис КПД</CardTitle>
@@ -384,14 +625,14 @@ const handleCreateMeeting = async () => {
                 <TabsTrigger value="past">Прошедшие КПД</TabsTrigger>
                 {isAdmin && <TabsTrigger value="admin">Администрирование</TabsTrigger>}
               </TabsList>
-              
+
               {/* Текущее КПД */}
               <TabsContent value="current">
                 {currentMeeting ? (
                   <div className="space-y-6">
                     <div className="flex justify-between items-center">
                       <h3 className="text-lg font-semibold">
-                        Текущее заседание КПД ({currentMeeting.dates.join(", ")})
+                        Текущее заседание КПД ({currentMeeting.dates.map(formatDate).join(", ")})
                       </h3>
                       {isAdmin && (
                         <Button onClick={() => confirmViolations(currentMeeting.id)}>
@@ -400,28 +641,31 @@ const handleCreateMeeting = async () => {
                         </Button>
                       )}
                     </div>
-                    
+
                     {isAdmin ? (
                       <div className="space-y-4">
+                        {/* Загрузка актов КПД */}
                         <div className="border rounded-lg p-4">
                           <h4 className="font-medium mb-2">Загрузка актов КПД</h4>
-                          <div className="flex gap-2">
+                          <div className="flex flex-col sm:flex-row gap-2">
                             <Input
-                                      type="file"
-                                      accept=".zip"
-                                      onChange={handleFileChange}  // Используем отдельный обработчик
-                                      className="max-w-md"
-                                    />
-                                    <Button 
-                                      onClick={handleFileUpload} 
-                                      disabled={!selectedFile || isUploading || !currentMeeting}
-                                    >
-                                      <Upload className="mr-2 h-4 w-4" />
-                                      {isUploading ? "Загрузка..." : "Загрузить"}
-                                    </Button>
+                              type="file"
+                              accept=".zip"
+                              onChange={handleFileChange}
+                              className="flex-grow"
+                              disabled={isUploading}
+                            />
+                            <Button 
+                              onClick={handleFileUpload} 
+                              disabled={!selectedFile || isUploading}
+                            >
+                              <Upload className="mr-2 h-4 w-4" />
+                              {isUploading ? "Загрузка..." : "Загрузить"}
+                            </Button>
                           </div>
                         </div>
-                        
+
+                        {/* Все нарушения по блокам для админа */}
                         <div className="border rounded-lg p-4">
                           <h4 className="font-medium mb-2">Все нарушения по блокам</h4>
                           <Accordion type="multiple" className="w-full">
@@ -430,10 +674,10 @@ const handleCreateMeeting = async () => {
                                 <AccordionTrigger>{floor} этаж</AccordionTrigger>
                                 <AccordionContent>
                                   <div className="space-y-4">
-                                    {Array.from({ length: 8 }, (_, i) => i + 1).map((block) => {
-                                      const blockKey = `${floor}.${block}`;
+                                    {Array.from({ length: 8 }, (_, i) => i + 1).map((blockNum) => {
+                                      const blockKey = `${floor}.${blockNum}`;
                                       const blockViolations = getBlockViolations(blockKey);
-                                      const assignedViolations = getAssignedViolationsForBlock(blockKey);
+                                      const assignedViolationsForBlock = getAssignedViolationsForBlock(blockKey);
                                       
                                       if (blockViolations.length === 0) return null;
                                       
@@ -441,18 +685,25 @@ const handleCreateMeeting = async () => {
                                         <div key={`block-${blockKey}`} className="border rounded-lg p-3">
                                           <h5 className="font-medium mb-2">Блок {blockKey}</h5>
                                           
+                                          {/* Акт нарушений */}
                                           <div className="mb-4">
                                             <h6 className="text-sm font-medium mb-1">Акт нарушений:</h6>
                                             {blockViolations.map((violation) => (
-                                              <div key={`violation-${violation.id}`} className="text-sm text-gray-600">
-                                                {violation.date} - {violation.room || `Блок ${violation.block}`}: {violation.description}
+                                              <div key={`violation-${violation.id}`} className="text-sm text-gray-600 mb-1 flex justify-between items-start">
+                                                <span>
+                                                  {formatDate(violation.date)} - {violation.room || `Блок ${violation.block}`}: {violation.description}
+                                                </span>
+                                                <Button variant="ghost" size="sm" className="p-1 h-auto">
+                                                  <Download className="h-4 w-4" />
+                                                </Button>
                                               </div>
                                             ))}
                                           </div>
-                                          
+
+                                          {/* Распределенные нарушения */}
                                           <div>
                                             <h6 className="text-sm font-medium mb-1">Распределенные нарушения:</h6>
-                                            {assignedViolations.length > 0 ? (
+                                            {assignedViolationsForBlock.length > 0 ? (
                                               <Table>
                                                 <TableHeader>
                                                   <TableRow>
@@ -464,13 +715,13 @@ const handleCreateMeeting = async () => {
                                                   </TableRow>
                                                 </TableHeader>
                                                 <TableBody>
-                                                  {assignedViolations.map((av) => {
-                                                    const violation = violations.find(v => v.id === av.violation_id);
-                                                    const resident = residents.find(r => r.id === av.user_id);
+                                                  {assignedViolationsForBlock.map((av) => {
+                                                    const violation = violations.find(v => v.id === av.violationId);
+                                                    const resident = residents.find(r => r.id === av.userId);
                                                     return (
                                                       <TableRow key={`assignment-${av.id}`}>
                                                         <TableCell>{resident?.name || "Неизвестно"}</TableCell>
-                                                        <TableCell>{violation?.date || ""}</TableCell>
+                                                        <TableCell>{violation ? formatDate(violation.date) : ""}</TableCell>
                                                         <TableCell>{violation?.room || "Общий"}</TableCell>
                                                         <TableCell>{av.hours}</TableCell>
                                                         <TableCell>{av.confirmed ? "Подтверждено" : "Ожидает"}</TableCell>
@@ -494,95 +745,92 @@ const handleCreateMeeting = async () => {
                         </div>
                       </div>
                     ) : (
+                      // Интерфейс для жильца/старосты блока
                       <div className="space-y-4">
-                        {isBlockLeader && (
+                        {isBlockLeader ? (
                           <div className="border rounded-lg p-4">
-                            <h4 className="font-medium mb-2">Нарушения вашего блока ({userFloor}.{userBlock})</h4>
+                            <h4 className="font-medium mb-2">Нарушения вашего блока ({getUserBlock()})</h4>
                             
                             {getUserViolations().length > 0 ? (
                               <>
+                                {/* Акт нарушений */}
                                 <div className="mb-4">
                                   <h5 className="text-sm font-medium mb-1">Акт нарушений:</h5>
                                   {getUserViolations().map((violation) => (
                                     <div key={`user-violation-${violation.id}`} className="text-sm text-gray-600 mb-1">
-                                      {violation.date} - {violation.room || `Блок ${violation.block}`}: {violation.description}
+                                      {formatDate(violation.date)} - {violation.room || `Блок ${violation.block}`}: {violation.description}
                                     </div>
                                   ))}
                                 </div>
-                                
+
+                                {/* Форма распределения нарушений */}
                                 <div className="mb-4">
                                   <h5 className="text-sm font-medium mb-2">Распределить нарушения:</h5>
                                   <div className="space-y-3">
                                     {newViolations.map((violation) => (
-                                      <div key={`new-violation-${violation.id}`} className="flex gap-2 items-center">
-                                        <Select
-                                          value={violation.userId}
-                                          onValueChange={(value) => {
-                                            const resident = residents.find(r => r.id.toString() === value);
-                                            updateViolationAssignment(
-                                              violation.id,
-                                              "userId",
-                                              value
-                                            );
-                                            updateViolationAssignment(
-                                              violation.id,
-                                              "userName",
-                                              resident?.name || ""
-                                            );
-                                          }}
-                                        >
-                                          <SelectTrigger className="w-[180px]">
-                                            <SelectValue placeholder="Выберите жильца" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {getResidentsForBlock(userBlock).map((resident) => (
-                                              <SelectItem key={`resident-${resident.id}`} value={resident.id.toString()}>
-                                                {resident.name} ({resident.room})
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                      <div key={`new-violation-${violation.id}`} className="flex flex-wrap gap-2 items-center p-2 border rounded">
+                                        <div className="flex-1 min-w-[120px]">
+                                          <Label className="text-xs">Жилец</Label>
+                                          <Select
+                                            value={violation.userId?.toString() || ""}
+                                            onValueChange={(value) => updateViolationAssignment(violation.id, "userId", parseInt(value))}
+                                          >
+                                            <SelectTrigger className="w-full">
+                                              <SelectValue placeholder="Выберите жильца" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {getResidentsForBlock(getUserBlock()).map((resident) => (
+                                                <SelectItem key={`resident-${resident.id}`} value={resident.id.toString()}>
+                                                  {resident.name} ({resident.room})
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
                                         
-                                        <Select
-                                          value={violation.date}
-                                          onValueChange={(value) =>
-                                            updateViolationAssignment(violation.id, "date", value)
-                                          }
-                                        >
-                                          <SelectTrigger className="w-[120px]">
-                                            <SelectValue placeholder="Дата" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {currentMeeting.dates.map((date) => (
-                                              <SelectItem key={`date-${date}`} value={date}>
-                                                {date}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                        <div className="flex-1 min-w-[100px]">
+                                          <Label className="text-xs">Дата</Label>
+                                          <Select
+                                            value={violation.date}
+                                            onValueChange={(value) => updateViolationAssignment(violation.id, "date", value)}
+                                          >
+                                            <SelectTrigger className="w-full">
+                                              <SelectValue placeholder="Дата" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {currentMeeting.dates.map((date) => (
+                                                <SelectItem key={`date-${date}`} value={date}>
+                                                  {formatDate(date)}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
                                         
-                                        <Select
-                                          value={violation.hours.toString()}
-                                          onValueChange={(value) =>
-                                            updateViolationAssignment(violation.id, "hours", parseInt(value))
-                                          }
-                                        >
-                                          <SelectTrigger className="w-[80px]">
-                                            <SelectValue placeholder="Часы" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {[1, 2, 3, 4, 5].map((hours) => (
-                                              <SelectItem key={`hours-${hours}`} value={hours.toString()}>
-                                                {hours}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                        <div className="flex-1 min-w-[80px]">
+                                          <Label className="text-xs">Часы</Label>
+                                          <Select
+                                            value={violation.hours.toString()}
+                                            onValueChange={(value) => updateViolationAssignment(violation.id, "hours", parseInt(value))}
+                                          >
+                                            <SelectTrigger className="w-full">
+                                              <SelectValue placeholder="Часы" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {[1, 2, 3, 4, 5].map((hours) => (
+                                                <SelectItem key={`hours-${hours}`} value={hours.toString()}>
+                                                  {hours}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
                                         
                                         <Button
                                           variant="ghost"
                                           size="icon"
                                           onClick={() => removeViolationAssignment(violation.id)}
+                                          className="mt-5"
                                         >
                                           <Trash2 className="h-4 w-4 text-red-500" />
                                         </Button>
@@ -609,9 +857,7 @@ const handleCreateMeeting = async () => {
                               <div className="text-gray-500">Нет нарушений для вашего блока</div>
                             )}
                           </div>
-                        )}
-                        
-                        {!isBlockLeader && (
+                        ) : (
                           <div>
                             <h4 className="font-medium mb-2">Текущее заседание КПД</h4>
                             <p className="text-gray-600">
@@ -628,7 +874,7 @@ const handleCreateMeeting = async () => {
                   </div>
                 )}
               </TabsContent>
-              
+
               {/* Прошедшие КПД */}
               <TabsContent value="past">
                 <div className="space-y-4">
@@ -638,7 +884,7 @@ const handleCreateMeeting = async () => {
                         <div key={`past-meeting-${meeting.id}`} className="border rounded-lg p-4">
                           <div className="flex justify-between items-center mb-2">
                             <h4 className="font-medium">
-                              Заседание КПД от {new Date(meeting.createdAt).toLocaleDateString()} ({meeting.dates.join(", ")})
+                              Заседание КПД от {formatDate(meeting.createdAt)} ({meeting.dates.map(formatDate).join(", ")})
                             </h4>
                             {isAdmin && (
                               <Button variant="outline" size="sm">
@@ -649,16 +895,17 @@ const handleCreateMeeting = async () => {
                           </div>
                           
                           {isAdmin ? (
+                            // Интерфейс админа для прошедших КПД
                             <Accordion type="multiple" className="w-full">
                               {Array.from({ length: 14 }, (_, i) => i + 1).map((floor) => (
                                 <AccordionItem key={`past-floor-${floor}`} value={`past-floor-${floor}`}>
                                   <AccordionTrigger>{floor} этаж</AccordionTrigger>
                                   <AccordionContent>
                                     <div className="space-y-3">
-                                      {Array.from({ length: 8 }, (_, i) => i + 1).map((block) => {
-                                        const blockKey = `${floor}.${block}`;
+                                      {Array.from({ length: 8 }, (_, i) => i + 1).map((blockNum) => {
+                                        const blockKey = `${floor}.${blockNum}`;
                                         const blockViolations = violations.filter(
-                                          (v) => v.block === blockKey || (v.room && v.room.startsWith(`${blockKey}.`))
+                                          (v) => v.meetingId === meeting.id && (v.block === blockKey || (v.room && v.room.startsWith(`${blockKey}.`)))
                                         );
                                         
                                         if (blockViolations.length === 0) return null;
@@ -667,15 +914,22 @@ const handleCreateMeeting = async () => {
                                           <div key={`past-block-${blockKey}`} className="border rounded-lg p-3">
                                             <h5 className="font-medium mb-2">Блок {blockKey}</h5>
                                             
+                                            {/* Акт нарушений */}
                                             <div className="mb-3">
                                               <h6 className="text-sm font-medium mb-1">Акт нарушений:</h6>
                                               {blockViolations.map((violation) => (
-                                                <div key={`past-violation-${violation.id}`} className="text-sm text-gray-600">
-                                                  {violation.date} - {violation.room || `Блок ${violation.block}`}: {violation.description}
+                                                <div key={`past-violation-${violation.id}`} className="text-sm text-gray-600 mb-1 flex justify-between items-start">
+                                                  <span>
+                                                    {formatDate(violation.date)} - {violation.room || `Блок ${violation.block}`}: {violation.description}
+                                                  </span>
+                                                  <Button variant="ghost" size="sm" className="p-1 h-auto">
+                                                    <Download className="h-4 w-4" />
+                                                  </Button>
                                                 </div>
                                               ))}
                                             </div>
-                                            
+
+                                            {/* Распределенные нарушения */}
                                             <div>
                                               <h6 className="text-sm font-medium mb-1">Распределенные нарушения:</h6>
                                               <Table>
@@ -690,18 +944,18 @@ const handleCreateMeeting = async () => {
                                                 <TableBody>
                                                   {assignedViolations
                                                     .filter((av) => {
-                                                      const violation = violations.find(v => v.id === av.violation_id);
-                                                      return violation && 
+                                                      const violation = violations.find(v => v.id === av.violationId);
+                                                      return violation && violation.meetingId === meeting.id &&
                                                         (violation.block === blockKey || 
                                                          (violation.room && violation.room.startsWith(`${blockKey}.`)));
                                                     })
                                                     .map((av) => {
-                                                      const violation = violations.find(v => v.id === av.violation_id);
-                                                      const resident = residents.find(r => r.id === av.user_id);
+                                                      const violation = violations.find(v => v.id === av.violationId);
+                                                      const resident = residents.find(r => r.id === av.userId);
                                                       return (
                                                         <TableRow key={`past-assignment-${av.id}`}>
                                                           <TableCell>{resident?.name || "Неизвестно"}</TableCell>
-                                                          <TableCell>{violation?.date || ""}</TableCell>
+                                                          <TableCell>{violation ? formatDate(violation.date) : ""}</TableCell>
                                                           <TableCell>{violation?.room || "Общий"}</TableCell>
                                                           <TableCell>{av.hours}</TableCell>
                                                         </TableRow>
@@ -719,20 +973,21 @@ const handleCreateMeeting = async () => {
                               ))}
                             </Accordion>
                           ) : (
+                            // Интерфейс жильца для прошедших КПД
                             <div>
                               <h5 className="text-sm font-medium mb-2">Нарушения вашего блока:</h5>
                               {assignedViolations
                                 .filter((av) => {
-                                  const violation = violations.find(v => v.id === av.violation_id);
-                                  return violation && 
-                                    (violation.block === userBlock || 
-                                     (violation.room && violation.room.startsWith(`${userBlock}.`)));
+                                  const violation = violations.find(v => v.id === av.violationId);
+                                  return violation && violation.meetingId === meeting.id &&
+                                    (violation.block === getUserBlock() || 
+                                     (violation.room && violation.room.startsWith(`${getUserBlock()}.`)));
                                 })
                                 .map((av) => {
-                                  const violation = violations.find(v => v.id === av.violation_id);
+                                  const violation = violations.find(v => v.id === av.violationId);
                                   return (
                                     <div key={`user-assignment-${av.id}`} className="text-sm text-gray-600 mb-2">
-                                      {violation?.date || ""} - {violation?.room || `Блок ${violation?.block}`}: {av.hours} часов
+                                      {violation ? formatDate(violation.date) : ""} - {violation?.room || `Блок ${violation?.block}`}: {av.hours} часов
                                     </div>
                                   );
                                 })}
@@ -748,70 +1003,101 @@ const handleCreateMeeting = async () => {
                   )}
                 </div>
               </TabsContent>
-              
+
               {/* Администрирование (только для админов) */}
               {isAdmin && (
                 <TabsContent value="admin">
-                  <div className="space-y-4">
+                  <div className="space-y-6">
+                    {/* Создать новое КПД */}
                     <div className="border rounded-lg p-4">
-                      <h4 className="font-medium mb-2">Создать новое КПД</h4>
-                      <div className="space-y-3">
+                      <h4 className="font-medium mb-3">Создать новое КПД</h4>
+                      
+                      <div className="space-y-4">
                         <div>
-                          <label className="block text-sm font-medium mb-1">Даты нарушений (через запятую)</label>
-                          <Input 
-                            placeholder="Например: 2023-11-01, 2023-11-02" 
-                            onChange={(e) => {
-                              const dates = e.target.value.split(',').map(d => d.trim());
-                              // Здесь можно добавить валидацию дат
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">Загрузить акты КПД (.zip)</label>
+                          <Label className="block text-sm font-medium mb-1">Даты нарушений</Label>
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {newMeetingDates.map((date) => (
+                              <div key={date} className="flex items-center bg-gray-100 rounded-full px-3 py-1 text-sm">
+                                {formatDate(date)}
+                                <button
+                                  type="button"
+                                  onClick={() => removeDateFromNewMeeting(date)}
+                                  className="ml-2 text-gray-500 hover:text-gray-700"
+                                >
+                                  &times;
+                                </button>
+                              </div>
+                            ))}
+                          </div>
                           <div className="flex gap-2">
-                            <Input 
-                              type="file" 
-                              accept=".zip" 
-                              className="max-w-md" 
-                              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                            <Input
+                              type="date"
+                              value={newMeetingDateInput}
+                              onChange={(e) => setNewMeetingDateInput(e.target.value)}
+                              className="flex-grow max-w-xs"
                             />
-                            <Button onClick={handleFileUpload}>
-                              <Upload className="mr-2 h-4 w-4" />
-                              Загрузить
+                            <Button onClick={addDateToNewMeeting} variant="outline">
+                              <Plus className="mr-2 h-4 w-4" />
+                              Добавить дату
                             </Button>
                           </div>
                         </div>
-                        <Button 
-                          className="mt-2"
-                          onClick={() => {
-                            // Здесь нужно получить даты из input и вызвать createNewMeeting
-                            const dates = ["2023-11-01"]; // Временная заглушка
-                            createNewMeeting(dates);
-                          }}
-                        >
+
+                        <div>
+                          <Label className="block text-sm font-medium mb-1">Время собрания (необязательно)</Label>
+                          <Input
+                            type="time"
+                            value={newMeetingTime}
+                            onChange={(e) => setNewMeetingTime(e.target.value)}
+                            className="max-w-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <Label className="block text-sm font-medium mb-1">Загрузить акты КПД (.zip)</Label>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <Input
+                              type="file"
+                              accept=".zip"
+                              className="flex-grow"
+                              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                              disabled={isUploading}
+                            />
+                            <Button onClick={handleFileUpload} disabled={!selectedFile || isUploading}>
+                              <Upload className="mr-2 h-4 w-4" />
+                              {isUploading ? "Загрузка..." : "Загрузить"}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <Button onClick={createNewMeeting}>
                           <Plus className="mr-2 h-4 w-4" />
                           Создать КПД
                         </Button>
                       </div>
                     </div>
-                    
+
+                    {/* Предстоящие КПД */}
                     <div className="border rounded-lg p-4">
                       <h4 className="font-medium mb-2">Предстоящие КПД</h4>
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {kpdMeetings
                           .filter(m => m.status === 'draft')
                           .map((meeting) => (
-                            <div key={`draft-meeting-${meeting.id}`} className="flex justify-between items-center p-2 border rounded">
+                            <div key={`draft-meeting-${meeting.id}`} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 border rounded gap-2">
                               <div>
-                                <h5 className="font-medium">КПД от {new Date(meeting.createdAt).toLocaleDateString()}</h5>
-                                <p className="text-sm text-gray-500">Даты нарушений: {meeting.dates.join(", ")}</p>
+                                <h5 className="font-medium">КПД от {formatDate(meeting.createdAt)}</h5>
+                                <p className="text-sm text-gray-500">Даты нарушений: {meeting.dates.map(formatDate).join(", ")}</p>
+                                {meeting.closedAt && (
+                                  <p className="text-xs text-gray-400">Закрыто: {formatDate(meeting.closedAt)}</p>
+                                )}
                               </div>
-                              <div className="flex gap-2">
+                              <div className="flex flex-wrap gap-2">
                                 <Button variant="outline" size="sm">
                                   <Edit className="mr-2 h-4 w-4" />
                                   Редактировать
                                 </Button>
-                                <Button 
+                                <Button
                                   size="sm"
                                   onClick={() => activateMeeting(meeting.id)}
                                 >
