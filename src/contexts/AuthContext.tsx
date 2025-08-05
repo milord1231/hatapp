@@ -18,6 +18,10 @@ interface AuthContextType {
   login: (username: string, password: string) => void;
   logout: () => void;
   remainingLockoutTime: number;
+  userId: number | null;
+  username: string | null;
+  isAdmin: boolean;
+  roles: string[];
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -35,6 +39,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLocked, setIsLocked] = useState(false);
   const [lockoutEndTime, setLockoutEndTime] = useState<number | null>(null);
   const [remainingLockoutTime, setRemainingLockoutTime] = useState(0);
+  const [userId, setUserId] = useState<number | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [roles, setRoles] = useState<string[]>([]);
+
 
   useEffect(() => {
     restoreAuthState();
@@ -65,29 +74,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [isLocked, lockoutEndTime]);
 
   const restoreAuthState = () => {
-    const storedFailedAttempts = localStorage.getItem("failedAttempts");
-    const storedLockoutEndTime = localStorage.getItem("lockoutEndTime");
-    const token = Cookies.get("access_token");
+  const token = Cookies.get("access_token");
+  const storedFailedAttempts = localStorage.getItem("failedAttempts");
+  const storedLockoutEndTime = localStorage.getItem("lockoutEndTime");
 
-    if (storedFailedAttempts) {
-      setFailedAttempts(parseInt(storedFailedAttempts, 10));
-    }
-
-    if (storedLockoutEndTime) {
-      const endTime = parseInt(storedLockoutEndTime, 10);
+  if (storedFailedAttempts) setFailedAttempts(parseInt(storedFailedAttempts, 10));
+  if (storedLockoutEndTime) {
+    const endTime = parseInt(storedLockoutEndTime, 10);
+    if (endTime > Date.now()) {
+      setIsLocked(true);
       setLockoutEndTime(endTime);
-      if (endTime > Date.now()) {
-        setIsLocked(true);
-      } else {
-        localStorage.removeItem("lockoutEndTime");
-        setLockoutEndTime(null);
-      }
+    } else {
+      localStorage.removeItem("lockoutEndTime");
     }
+  }
 
-    if (token) {
-      setIsAuthenticated(true);
+  if (token) {
+    setIsAuthenticated(true);
+    setUserId(Number(Cookies.get("user_id")));
+    setUsername(Cookies.get("username") || null);
+    setIsAdmin(Cookies.get("admin") === "true");
+
+    // Роли можно хранить строкой: "student,block_head"
+    const rolesFromCookie = Cookies.get("roles");
+    if (rolesFromCookie) {
+      setRoles(rolesFromCookie.split(","));
     }
-  };
+  }
+};
+
 
   const login = async (username: string, password: string) => {
     if (isLocked) {
@@ -134,6 +149,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       Cookies.set("admin", String(data.kwargs.admin), { expires: 7 });
       Cookies.set("username", data.kwargs.username, { expires: 7 });
       Cookies.set("profileImg", data.kwargs.profileImg, { expires: 7 });
+      Cookies.set("roles", data.kwargs.roles.join(","), { expires: 7 });
+      setRoles(data.kwargs.roles);
+
 
       setIsAuthenticated(true);
     } catch (err) {
@@ -156,18 +174,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   return (
     <AuthContext.Provider
-      value={{
-        isAuthenticated,
-        failedAttempts,
-        isLocked,
-        lockoutEndTime,
-        login,
-        logout,
-        remainingLockoutTime,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  value={{
+    isAuthenticated,
+    failedAttempts,
+    isLocked,
+    lockoutEndTime,
+    login,
+    logout,
+    remainingLockoutTime,
+    userId,
+    username,
+    isAdmin,
+    roles,
+  }}
+>
+  {children}
+</AuthContext.Provider>
+
   );
 };
 

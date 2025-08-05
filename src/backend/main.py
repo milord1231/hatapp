@@ -3,7 +3,8 @@ import time
 import requests
 import json
 from bs4 import BeautifulSoup
-
+import os
+import zipfile
 from flask import Flask, jsonify, request, session
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
@@ -20,7 +21,7 @@ from flask_socketio import SocketIO, emit
 from pywebpush import webpush, WebPushException
 
 from werkzeug.security import generate_password_hash
-
+from datetime import timedelta
 app = Flask(__name__)
 ALLOWED_ORIGINS = ['http://localhost:8080', 'http://m170rd.ru', "http://81.94.150.221:8080", "https://bcfe-193-46-217-15.ngrok-free.app"]
 ALLOWED_IPS =  ['127.0.0.1', '81.94.150.221']
@@ -32,8 +33,21 @@ VAPID_PRIVATE_KEY = "MiU7eQka-qKoDmZKP9efuWASrWRMcNlRkCexLwuDMSk"
 
 VAPID_PUBLIC_KEY = "BGYV6tsROe7o6Wk797JQ5gxqphVcDgwuaMV4DfuCGMgDytuO35iZY6exuFO7tUK0ULUGEhSqBAF7cVO9u6cnw1A"
 
+def validate_date(date_str):
+    try:
+        datetime.strptime(date_str, '%Y-%m-%d')
+        return True
+    except ValueError:
+        return False
 
 
+
+from flask_jwt_extended.exceptions import NoAuthorizationError
+from flask import jsonify
+
+@app.errorhandler(NoAuthorizationError)
+def handle_auth_error(e):
+    return jsonify({"error": "Missing or invalid JWT"}), 401
 
 
 app.config["JWT_SECRET_KEY"] = "hsdasdjasbdbjb123__@1jnmnA~"  # Change this!
@@ -145,6 +159,34 @@ class ChangeRequest(db.Model):
             "created_at": self.created_at.isoformat(),
             "closed_at": self.closed_at.isoformat() if self.closed_at else None
         }
+
+
+class KPDMeeting(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    dates = db.Column(db.String)  # JSON список дат
+    status = db.Column(db.String)  # draft/active/completed
+    created_at = db.Column(db.DateTime, default=datetime.datetime.now)
+    closed_at = db.Column(db.DateTime)
+
+class KPDViolation(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    meeting_id = db.Column(db.Integer, db.ForeignKey('kpd_meeting.id'))
+    date = db.Column(db.String)  # Дата нарушения
+    description = db.Column(db.String)
+    floor = db.Column(db.Integer)
+    block = db.Column(db.String)
+    room = db.Column(db.String)  # Может быть null для общих нарушений блока
+    file_path = db.Column(db.String)  # Путь к файлу акта
+
+class KPDAssignment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    violation_id = db.Column(db.Integer, db.ForeignKey('kpd_violation.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    assigned_by = db.Column(db.Integer, db.ForeignKey('user.id'))  # Кто назначил
+    hours = db.Column(db.Integer)
+    confirmed = db.Column(db.Boolean, default=False)
+
+
 
 #Приводит к единому виду все логины
 def normalize_login(login: str) -> str:
@@ -350,22 +392,21 @@ def get_cpd_history_and_balance_by_login(login: str) -> dict:
     }
 
 
-def login_to_kai(username: str, password: str) -> bool:
+def login_to_kai(username: str, password: str):
     login_url = "https://kai.ru/main?p_p_id=58&p_p_lifecycle=1&p_p_state=normal&p_p_mode=view&_58_struts_action=%2Flogin%2Flogin"
     referer_url = "https://kai.ru/main"
 
-    # Сессия для сохранения куки и токенов
-    cookie_session = requests.Session()
+    session = requests.Session()
 
-    # Шаг 1 — получить страницу логина, чтобы вытащить CSRF-токен (nonce)
-    login_page = cookie_session.get(referer_url)
+    # Шаг 1 — получить страницу логина
+    login_page = session.get(referer_url)
     soup = BeautifulSoup(login_page.text, "html.parser")
 
-    # Ищем токен (name совпадает)
+    # CSRF-токен (если нужен)
     nonce_input = soup.find("input", {"name": "blackboard.platform.security.NonceUtil.nonce.ajax"})
     nonce = nonce_input["value"] if nonce_input else ""
 
-    # Шаг 2 — подготавливаем данные для логина
+    # Шаг 2 — подготовка payload
     payload = {
         "_58_formDate": time.time(),
         "_58_saveLastPath": False,
@@ -375,58 +416,70 @@ def login_to_kai(username: str, password: str) -> bool:
         "_58_password": password,
     }
 
-    # Шаг 3 — заголовки
     headers = {
         "User-Agent": "Mozilla/5.0",
         "Referer": referer_url,
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    # Шаг 4 — логинимся
-    response = cookie_session.post(login_url, data=payload, headers=headers)
+    # Шаг 3 — логинимся
+    response = session.post(login_url, data=payload, headers=headers)
 
-    # Проверяем, вошли ли мы
-    print("Status:", response.status_code)
-    print("Final URL:", response.url)
-    finalURL = response.url
+    if "main?p_p_id=58&p_p_lifecycle=0&p_p_state=maximized&saveLastPath=false" in response.url:
+        return None  # Неверные данные
 
+    # Шаг 4 — достаём информацию о пользователе
+    profile_page = session.get("https://kai.ru/group/guest/common/about-me", headers=headers)
+    soup = BeautifulSoup(profile_page.text, "html.parser")
 
-    if  "main?p_p_id=58&p_p_lifecycle=0&p_p_state=maximized&saveLastPath=false" in finalURL:return False
+    def extract_value(soup, input_id):
+        el = soup.find("input", {"id": input_id})
+        return el.get("value") if el else ""
+
+    first_name = extract_value(soup, "_aboutMe_WAR_aboutMe10_firstName")
+    last_name = extract_value(soup, "_aboutMe_WAR_aboutMe10_lastName")
+    middle_name = extract_value(soup, "_aboutMe_WAR_aboutMe10_middleName")
+
+    profileImg_el = soup.find("img", {"id": "igva_column2_0_avatar"})
+    profileImg = "https://kai.ru/" + profileImg_el["src"] if profileImg_el else ""
+
+    # Нормализуем логин (приводим к виду для БД)
+    normalized_login = normalize_login(username)
+
+    # Проверка существования пользователя
+    response, status_code = check_user_login(normalized_login)
+    response_data = response.get_json()
+
+    if response_data["exists"]:
+        user_id = response_data["user_id"]
     else:
-        response = cookie_session.get("https://kai.ru/group/guest/common/about-me", headers=headers)
-        soup = BeautifulSoup(response.text, "html.parser")
+        reg_resp = register_user(
+            normalized_login, password, 8, 0, 0, 0, 0,
+            first_name, last_name, middle_name,
+            "Студент КАИ", 0, profileImg
+        )
+        user_id = reg_resp["user_id"]
+    # Обновим пароль и аватар
+    update_user(user_id, {'password': password, 'profile_image': profileImg})
 
-        first_name_input = soup.find("input", {"id": "_aboutMe_WAR_aboutMe10_firstName"})
-        if first_name_input:
-            first_name = first_name_input.get("value")
+    # Заглушка: роли (пока только студент, в будущем можно расширить)
+    userBData = get_user_info_by_id(user_id)
+    userAdminRight = userBData['user']['admin_right']
+    userRoles = userBData['user']['roles']
+    
+    roles = ["student"]
+    if 'Староста этажа' in userRoles:
+        roles.append("block_head")
 
-        last_name_input = soup.find("input", {"id": "_aboutMe_WAR_aboutMe10_lastName"})
-        if last_name_input:
-            last_name = last_name_input.get("value")
-
-        father_name_input = soup.find("input", {"id": "_aboutMe_WAR_aboutMe10_middleName"})
-        if father_name_input:
-            middle_name = father_name_input.get("value")
-
-        profileImg_input = soup.find("img", {"id": "igva_column2_0_avatar"})
-        if profileImg_input:
-            profileImg = "https://kai.ru/"+profileImg_input.get("src")
-        
-        normalized_login=normalize_login(username) #Единый вид логина
-        response, status_code = check_user_login(normalized_login)
-
-        # Теперь ты можешь безопасно извлечь JSON-данные из response
-        response_data = response.get_json()
-
-
-        if response_data["exists"]:
-            user_id = response_data["user_id"]
-
-        else:
-            resp = register_user(normalized_login, password, 8, 0, 0, 0, 0, first_name, last_name, middle_name, "Студент КАИ", 0, profileImg)
-            user_id = resp["user_id"]
-        update_user(user_id, {'password': password, 'profile_image': profileImg})
-        return user_id, username, password, profileImg
+    return {
+        "user_id": user_id,
+        "username": normalized_login,
+        "first_name": first_name,
+        "last_name": last_name,
+        "middle_name": middle_name,
+        "profileImg": profileImg,
+        "roles": roles,
+    }
 
 
 
@@ -622,11 +675,13 @@ def get_profile_data():
     # Получаем userId из параметров запроса
     user_id = request.args.get('userId')  
     if not user_id:
+        print("userID is empty", user_id)
         return jsonify({"message": "userID is empty"}), 404
     
     # Получаем информацию о пользователе по userId
     info = get_user_info_by_id(user_id)
     if not info:
+        print("User not found", user_id)
         return jsonify({"message": "User not found"}), 404
     
     # Получаем историю КПД и баланс
@@ -645,36 +700,48 @@ def get_profile_data():
         'profileImage': info['user']['profile_image'],
         "logged_in_as": current_user
     }
+    print(json_content)
     return jsonify(json_content), 200
-
 
 
 @limiter.limit("10 per minute")
 @app.route('/api/login', methods=['POST'])
 def login():
-    data = request.json
+    data = request.get_json()
     username = data.get("login")
     password = data.get("password")
 
     if not username or not password:
         return jsonify({"message": "Missing credentials"}), 400
 
-    success = login_to_kai(username, password)
+    user_data = login_to_kai(username, password)
 
-    if success:
-        access_token = create_access_token(identity=username, expires_delta=datetime.timedelta(days=1))
-        
-        session['user_id'] = success[0]
-        session['username'] = success[1]
-        session['password'] = success[2]
-        session['profileImg'] = success[3]
-        adminRights = get_admin_by_login(success[1])
-        
-        
-        
-        return jsonify(access_token=access_token, kwargs={"message": "Login successful!", 'user_id': success[0], 'username': success[1], 'password': success[2], 'profileImg': success[3], 'admin': adminRights, "access_token": access_token}), 200
-    else:
+    if not user_data:
         return jsonify({"message": "Invalid credentials"}), 401
+
+    access_token = create_access_token(identity=str(username), expires_delta=datetime.timedelta(days=1))
+
+
+    # Сохраняем в сессии только нужное
+    session['user_id'] = user_data["user_id"]
+    session['username'] = user_data["username"]
+    session['profileImg'] = user_data["profileImg"]
+
+    # Получаем административные права (если есть)
+    adminRights = get_admin_by_login(user_data["username"])
+
+    # Возвращаем JWT и данные
+    return jsonify(
+        access_token=access_token,
+        kwargs={
+            "message": "Login successful!",
+            "user_id": user_data["user_id"],
+            "username": user_data["username"],
+            "profileImg": user_data["profileImg"],
+            "roles": user_data.get("roles", []),
+            "admin": adminRights
+        }
+    ), 200
 
 
 
@@ -1193,12 +1260,239 @@ def check_admin():
     user = db.session.get(User, who_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
+    
+    print(username, user)
 
     return jsonify({
         "is_admin": user.admin_right in [1, 2],
         "is_super_admin": user.admin_right == 2,
         "admin_right": user.admin_right
     }), 200
+
+
+# Эндпоинты для КПД
+@app.route('/api/kpd/meetings', methods=['GET'])
+@jwt_required()
+def get_kpd_meetings():
+    meetings = KPDMeeting.query.order_by(KPDMeeting.created_at.desc()).all()
+    return jsonify([{
+        'id': m.id,
+        'dates': json.loads(m.dates),
+        'status': m.status,
+        'created_at': m.created_at.isoformat(),
+        'closed_at': m.closed_at.isoformat() if m.closed_at else None
+    } for m in meetings]), 200
+
+
+
+@app.route('/api/kpd/meetings', methods=['POST'])
+@jwt_required()
+def create_kpd_meeting():
+    if not checkAdmin_elsePass(get_jwt_identity()):
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    data = request.get_json()
+    if not data or 'dates' not in data:
+        return jsonify({"error": "Missing dates"}), 400
+    
+    try:
+        # Проверяем даты
+        dates = data['dates']
+        if not isinstance(dates, list):
+            return jsonify({"error": "Dates should be an array"}), 400
+        
+        if not all(validate_date(d) for d in dates):
+            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+            
+        # Создаем новое собрание КПД
+        new_meeting = KPDMeeting(
+            dates=json.dumps(dates),
+            status='draft'
+        )
+        db.session.add(new_meeting)
+        db.session.commit()
+        
+        return jsonify({
+            "message": "Meeting created",
+            "id": new_meeting.id,
+            "dates": dates,
+            "status": new_meeting.status
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/kpd/meetings/<int:meeting_id>', methods=['PUT'])
+@jwt_required()
+def update_kpd_meeting(meeting_id):
+    if not checkAdmin_elsePass(get_jwt_identity()):
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    meeting = KPDMeeting.query.get_or_404(meeting_id)
+    data = request.json
+    
+    if 'dates' in data:
+        meeting.dates = json.dumps(data['dates'])
+    if 'status' in data:
+        meeting.status = data['status']
+        if data['status'] == 'completed':
+            meeting.closed_at = datetime.datetime.now()
+    
+    db.session.commit()
+    return jsonify({"message": "Meeting updated"}), 200
+
+@app.route('/api/kpd/meetings/<int:meeting_id>/violations', methods=['GET'])
+@jwt_required()
+def get_kpd_violations(meeting_id):
+    violations = KPDViolation.query.filter_by(meeting_id=meeting_id).all()
+    return jsonify([{
+        'id': v.id,
+        'date': v.date,
+        'description': v.description,
+        'floor': v.floor,
+        'block': v.block,
+        'room': v.room,
+        'file_path': v.file_path
+    } for v in violations]), 200
+
+@app.route('/api/kpd/meetings/<int:meeting_id>/assignments', methods=['POST'])
+@jwt_required()
+def create_kpd_assignment(meeting_id):
+    data = request.json
+    user_id = get_jwt_identity()
+    
+    # Проверяем, является ли пользователь старостой блока
+    user = User.query.get(user_id)
+    if 'block_head' not in user.roles:
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    # Создаем назначения
+    for assignment in data['assignments']:
+        new_assignment = KPDAssignment(
+            violation_id=assignment['violation_id'],
+            user_id=assignment['user_id'],
+            assigned_by=user_id,
+            hours=assignment['hours']
+        )
+        db.session.add(new_assignment)
+    
+    db.session.commit()
+    return jsonify({"message": "Assignments created"}), 201
+
+@app.route('/api/kpd/meetings/<int:meeting_id>/confirm', methods=['POST'])
+@jwt_required()
+def confirm_kpd_assignments(meeting_id):
+    if not checkAdmin_elsePass(get_jwt_identity()):
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    # Подтверждаем все назначения для этого КПД
+    assignments = KPDAssignment.query.join(KPDViolation).filter(
+        KPDViolation.meeting_id == meeting_id
+    ).all()
+    
+    for assignment in assignments:
+        assignment.confirmed = True
+        # Добавляем часы КПД в историю пользователя
+        add_cpd_history({
+            'user_id': assignment.user_id,
+            'count': assignment.hours,
+            'reason': f"КПД за нарушение",
+            'who_id': assignment.assigned_by
+        })
+    
+    db.session.commit()
+    return jsonify({"message": "Assignments confirmed"}), 200
+
+@app.route('/api/kpd/upload', methods=['POST'])
+@jwt_required()
+def upload_kpd_files():
+    if not checkAdmin_elsePass(get_jwt_identity()):
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    
+    file = request.files['file']
+    meeting_id = request.form.get('meeting_id')
+    
+    # Здесь должна быть логика обработки файла (zip или docx)
+    # и извлечения информации о нарушениях
+    
+    # Пример сохранения информации о нарушении
+    new_violation = KPDViolation(
+        meeting_id=meeting_id,
+        date="2023-11-01",  # Извлечь из файла
+        description="Нарушение порядка",  # Извлечь из файла
+        floor=6,
+        block="5",
+        room="2",
+        file_path=f"uploads/{file.filename}"
+    )
+    db.session.add(new_violation)
+    db.session.commit()
+    
+    return jsonify({"message": "File processed", "violation_id": new_violation.id}), 200
+
+
+@app.route('/api/kpd/upload-zip', methods=['POST'])
+@jwt_required()
+def upload_kpd_zip():
+    if not checkAdmin_elsePass(get_jwt_identity()):
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    
+    file = request.files['file']
+    meeting_id = request.form.get('meeting_id')
+    
+    if not meeting_id:
+        return jsonify({"error": "Meeting ID is required"}), 400
+    
+    # Сохраняем ZIP файл
+    zip_path = f"uploads/kpd/{meeting_id}/{file.filename}"
+    os.makedirs(os.path.dirname(zip_path), exist_ok=True)
+    file.save(zip_path)
+    
+    # Обрабатываем ZIP архив
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(f"uploads/kpd/{meeting_id}/extracted")
+            
+            # Обрабатываем каждый DOCX файл
+            for docx_file in os.listdir(f"uploads/kpd/{meeting_id}/extracted"):
+                if docx_file.endswith('.docx'):
+                    # Парсим имя файла для получения блока/комнаты (формат: этаж_блок_комната.docx)
+                    filename = os.path.splitext(docx_file)[0]
+                    parts = filename.split('_')
+                    
+                    if len(parts) >= 2:
+                        floor = parts[0]
+                        block = parts[1]
+                        room = parts[2] if len(parts) > 2 else None
+                        
+                        # Здесь должна быть логика парсинга DOCX файла
+                        # и извлечения дат и описаний нарушений
+                        
+                        # Пример создания записи о нарушении
+                        violation = KPDViolation(
+                            meeting_id=meeting_id,
+                            date="2023-11-01",  # Извлечь из файла
+                            description="Нарушение порядка",  # Извлечь из файла
+                            floor=floor,
+                            block=block,
+                            room=room,
+                            file_path=f"uploads/kpd/{meeting_id}/extracted/{docx_file}"
+                        )
+                        db.session.add(violation)
+        
+        db.session.commit()
+        return jsonify({"message": "Files processed successfully"}), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 
 

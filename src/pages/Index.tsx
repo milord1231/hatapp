@@ -37,13 +37,18 @@ const Index: React.FC = () => {
     setError(null);    // Сбрасываем ошибку при новом запросе
 
     authFetch(`${API_BASE}/api/get-profile-data?userId=${userId}`)
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error('Ошибка сети или сервер вернул ошибку');
-        }
-        return res.json();
-      })
-      .then((data: UserData) => {
+      .then(async (res) => {
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Ошибка HTTP:', res.status, res.statusText, errorText);
+        throw new Error(`Ошибка сети или сервер вернул ошибку: ${res.status}`);
+      }
+      return res.json();
+    })
+
+
+
+          .then((data: UserData) => {
         setUser(data);
         setLoading(false); // Завершаем загрузку
       })

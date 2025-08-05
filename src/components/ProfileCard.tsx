@@ -319,7 +319,8 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ profileData }) => {
       const residenceResponse = await authFetch(`${import.meta.env.VITE_API_BASE_URL}/api/user/${Cookies.get("user_id")}/residence`, {
         method: 'PATCH',
         headers: { 
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${Cookies.get("access_token")}`
         },
         body: JSON.stringify({
           dormNumber: editableData.build,
@@ -336,7 +337,8 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ profileData }) => {
       const statusResponse = await authFetch(`${import.meta.env.VITE_API_BASE_URL}/api/user/${Cookies.get("user_id")}/status`, {
         method: 'PATCH',
         headers: { 
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${Cookies.get("access_token")}`
         },
         body: JSON.stringify({
           status: statusString,

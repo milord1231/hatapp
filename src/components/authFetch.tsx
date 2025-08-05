@@ -1,12 +1,14 @@
 import Cookies from 'js-cookie';
 
-// utils/authFetch.ts
 export const authFetch = (url: string, options: RequestInit = {}) => {
     const token = Cookies.get('access_token');
+    if (!token) {
+      console.warn('No access token found in cookies');
+    }
   
     const headers = {
       ...(options.headers || {}),
-      Authorization: `Bearer ${token}`,
+      Authorization: token ? `Bearer ${token}` : '',
       'Content-Type': 'application/json',
     };
   
@@ -14,5 +16,4 @@ export const authFetch = (url: string, options: RequestInit = {}) => {
       ...options,
       headers,
     });
-  };
-  
+};

@@ -10,6 +10,10 @@ const HomePage = () => {
     navigate("/profile");
   };
 
+  const handleKpdServiceClick = () => {
+    navigate("/kpdService");
+  };
+
   return (
     <div className="container mx-auto px-4 py-12">
       <div className="flex flex-col items-center justify-center min-h-[70vh]">
@@ -17,10 +21,17 @@ const HomePage = () => {
         <Button 
           size="lg" 
           onClick={handleProfileClick}
-          className="text-lg"
+          className="text-lg mb-5"
         >
           Профиль пользователя
         </Button>
+
+        <Button
+        size="lg"
+        onClick={handleKpdServiceClick}
+        className="text-lg mb-5">
+          Комиссия по персональным делам
+          </Button>
       </div>
     </div>
   );

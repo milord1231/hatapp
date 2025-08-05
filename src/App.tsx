@@ -9,6 +9,7 @@ import KpdHistory from "./pages/KpdHistory";
 import NotFound from "./pages/NotFound";
 import HomePage from "./pages/HomePage";
 import Login from "@/pages/Login";
+import KpdService from "@/pages/KpdService";
 import axios from 'axios';
 import PrivateRoute from '@/components/PrivateRoute';
 import AdminPanel from '@/pages/AdminPanel';
@@ -76,6 +77,7 @@ const App = () => {
               <Route path="/kpd-history" element={ <PrivateRoute><KpdHistory /></PrivateRoute> } />
               <Route path="/profile/:userId" element={ <AnotherProfile /> } />
               <Route path="/login" element={ <Login /> } />
+              <Route path="/kpdService" element={ <KpdService /> } />
               <Route path="*" element={ <NotFound /> } />
             </Routes>
           </BrowserRouter>
